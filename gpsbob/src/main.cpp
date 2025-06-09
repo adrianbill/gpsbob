@@ -49,9 +49,28 @@ void loop() {
     double lng = gps.location.lng();
 
     // Serial.println("GPS Lock");
+    Serial.print(gps.date.year());
+    Serial.print("-");
+    if (gps.date.month() < 10) Serial.print(F("0"));   
+    Serial.print(gps.date.month());
+    Serial.print("-");
+    if (gps.date.day() < 10) Serial.print(F("0"));   
+    Serial.print(gps.date.day());
+    Serial.print(" UTC");
+    if (gps.time.hour() < 10) Serial.print(F("0"));  
+    Serial.print(gps.time.hour());
+    Serial.print(":");
+    if (gps.time.minute() < 10) Serial.print(F("0")); 
+    Serial.print(gps.time.minute());
+    Serial.print(":");
+    if (gps.time.second() < 10) Serial.print(F("0")); 
+    Serial.print(gps.time.second());
+    Serial.print(", ");
     Serial.print(lat, 6);
     Serial.print(", ");
-    Serial.println(lng, 6);
+    Serial.print(lng, 6);
+    Serial.print(", Sat: ");
+    Serial.println(gps.satellites.value());
 
     // display.println("GPS Lock");
     display.setTextSize(1);

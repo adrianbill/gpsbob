@@ -27,9 +27,10 @@ void setup() {
   display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
 
   display.clearDisplay();
-  display.setTextSize(1);
+  display.setTextSize(2);
   display.setTextColor(WHITE);
   display.setCursor(0, 0);
+  display.cp437(true);   
   Serial.println("Waiting for GPS...");
   display.println("Waiting for GPS...");
   display.display();
@@ -44,20 +45,30 @@ void loop() {
   display.setCursor(0, 0);
 
   if (gps.location.isUpdated()) {
+    double lat = gps.location.lat();
+    double lng = gps.location.lng();
 
-    Serial.println("GPS Fix Acquired");
-    Serial.print("Lat: ");
-    Serial.println(gps.location.lat(), 6);
-    Serial.print("Lng: ");
-    Serial.println(gps.location.lng(), 6);
+    // Serial.println("GPS Lock");
+    Serial.print(lat, 6);
+    Serial.print(", ");
+    Serial.println(lng, 6);
 
-    display.println("GPS Fix Acquired");
-    display.print("Lat: ");
-    display.println(gps.location.lat(), 6);
-    display.print("Lng: ");
-    display.println(gps.location.lng(), 6);
+    // display.println("GPS Lock");
+    display.setTextSize(1);
+    display.println("Latitude");
+    display.setTextSize(2);
+    if (lat>=0 && lat<100) display.print("  ");
+    if (lat<0 && lat>-100) display.print(" ");
+    display.println(lat, 5);
+    display.setTextSize(1);
+    display.println("");
+    display.println("Longitude");
+    display.setTextSize(2);
+    if (lng>=0 && lng<100) display.print("  ");
+    if (lng<0 && lng>-100) display.print(" ");
+    display.println(lng, 5);
   } else {
-    display.println("Waiting for GPS fix...");
+    display.println("GPS Wait..");
     Serial.println("Waiting for GPS fix...");
   }
 

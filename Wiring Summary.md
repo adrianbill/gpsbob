@@ -20,5 +20,5 @@
 
 - This system logs NMEA sentences ($GPGGA) to CSV.
 - GPS fix is checked by ensuring the fix quality field is not 0.
-- A QR code generator (e.g. QR Code Monkey) can be used manually to point to http://192.168.4.1/.
+- A QR code generator (e.g. QR Code Monkey) can be used manually to point to <http://192.168.4.1/>.
 - The display can be extended to generate and render a QR code if desired using the QRCode library (on request).

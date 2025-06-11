@@ -7,7 +7,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <TinyGPSPlus.h>
-// #include <RTClib.h>
+// #include "esp_sleep.h"
 
 // === DISPLAY ===
 #define SCREEN_WIDTH 128
@@ -22,24 +22,37 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 HardwareSerial gpsSerial(2);
 TinyGPSPlus gps;
 
-// === SD Card ===
+// === Logging SD Card ===
 #define SD_CS 5
 fs::File csvFile;
 fs::File gpxFile;
+bool gpxHeaderWritten = false;
+bool csvHeaderWritten = false;
+int timezoneOffsetHours = 0;            // Default UTC
+int LOG_INTERVAL = 10000;               // default 10 seconds
 
 // === State ===
 String currentDateStr = "";
+String lastTimestamp = "----";
 unsigned long lastLogTime = 0;
-#define LOG_INTERVAL 10000
-bool gpxHeaderWritten = false;
+double lastLat = 0.0;
+double lastLng = 0.0;
 
 // === Wi-Fi ===
 AsyncWebServer server(80);
-
-
-int timezoneOffsetHours = 0;            // Default UTC
 String wifiSSID = "GPS_BOB";            // Default SSID
 String wifiPass = "12345678";           // Default password
+
+// === Sleep & Modes ===
+#define BUTTON_PIN 0
+enum Mode { LOG_MODE, WIFI_MODE, LIVE_MODE };
+uint32_t buttonPressTime = 0;
+const uint16_t LONG_PRESS_MS = 3000; // Long press length, 3 seconds
+const uint16_t DEBOUNCE_MS = 50;
+bool sleepEnabled = false;
+bool buttonWasPressed = false;
+
+Mode currentMode = LIVE_MODE;           //Default Start_Mode
 
 // === Utilities ===
 void loadConfig() {
@@ -80,12 +93,21 @@ void loadConfig() {
         Serial.print("Loaded password: ");
         Serial.println(wifiPass);
       }
+    } 
+    else if (line.startsWith("log_interval=")) {
+      String val = line.substring(13);
+      int interval = val.toInt() * 1000;
+      if (interval >= 1000) LOG_INTERVAL = interval;
+      Serial.print("Loaded log interval: ");
+      Serial.print(LOG_INTERVAL / 1000);
+      Serial.println(" seconds");
     }
   }
 
   config.close();
 }
 
+// === Date & Time conversion ===
 String toISO8601(TinyGPSDate date, TinyGPSTime time) {
   char buf[25];
   snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02dZ",
@@ -184,6 +206,7 @@ String gpsDateStamp(TinyGPSDate date) {
   return String(buf);
 }
 
+// === display tool (maybe reo) ===
 void displayMessage(const String &msg) {
   display.clearDisplay();
   display.setCursor(0, 0);
@@ -197,17 +220,22 @@ void displayMessage(const String &msg) {
 void openLogFiles(const String &dateStr) {
   currentDateStr = dateStr;
 
+
+
   String csvName = "/log_" + currentDateStr + ".csv";
+  bool newFile_csv = !SD.exists(csvName);
   csvFile = SD.open(csvName, FILE_APPEND);
-  if (csvFile && csvFile.size() == 0) {
-    csvFile.println("Timestamp(Local),Lat,Lon,Sats,HDOP,OffsetUTC");
+  csvHeaderWritten = newFile_csv;
+
+  if (csvFile && csvHeaderWritten) {
+    csvFile.println("Timestamp(Local),Latitude,Longitude,Satilites,HDOP,OffsetUTC");
     csvFile.flush();
   }
 
   String gpxName = "/track_" + currentDateStr + ".gpx";
-  bool newFile = !SD.exists(gpxName);
+  bool newFile_gpx = !SD.exists(gpxName);
   gpxFile = SD.open(gpxName, FILE_APPEND);
-  gpxHeaderWritten = newFile;
+  gpxHeaderWritten = newFile_gpx;
 
   if (gpxFile && gpxHeaderWritten) {
     gpxFile.println("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
@@ -278,19 +306,64 @@ void startWiFiServer() {
 
   server.begin();
 
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println("WiFi Mode:");
+  display.println("");
+  display.println("WiFi Enabled");
+  display.print("SSID:");
   display.println(wifiSSID);
-  display.print("http://");
+  display.print("Addr: ");
+  // display.print("http://");
   display.println(ip);
   display.display();
+}
+
+// === Button Handling ===
+void handleButton() {
+  static unsigned long lastChange = 0;
+  bool pressed = digitalRead(BUTTON_PIN) == LOW;
+
+  if (pressed && !buttonWasPressed && millis() - lastChange > DEBOUNCE_MS) {
+    buttonPressTime = millis();
+    buttonWasPressed = true;
+    lastChange = millis();
+  }
+
+  if (!pressed && buttonWasPressed) {
+    buttonWasPressed = false;
+    unsigned long pressDuration = millis() - buttonPressTime;
+
+    if (pressDuration > LONG_PRESS_MS) {
+      // Long press → toggle sleep
+      sleepEnabled = !sleepEnabled;
+      Serial.println(sleepEnabled ? "Entering Deep Sleep" : "Waking up");
+      if (sleepEnabled) {
+        displayMessage("Entering Sleep...");
+        delay(1000);
+        esp_deep_sleep_start();
+      } else {
+        // Just wake normally
+        currentMode = LOG_MODE;
+      }
+    } else {
+      // Short press → cycle mode
+      currentMode = (Mode)((currentMode + 1) % 3);
+      switch (currentMode) {
+        case LOG_MODE:  displayMessage("Log Mode"); break;
+        case WIFI_MODE: displayMessage("Wi-Fi Mode"); break;
+        case LIVE_MODE: displayMessage("Live Mode"); break;
+      }
+      delay(500);
+    }
+  }
 }
 
 // === Setup ===
 void setup() {
   Serial.begin(115200);
+  
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
   gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
+  
   display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
 
   if (!SD.begin(SD_CS)){
@@ -300,16 +373,32 @@ void setup() {
   }
 
   displayMessage("Waiting for GPS...");
-  delay(1000);
 
   startWiFiServer();
+  
+  delay(10000);
 }
 
 // === Main Loop ===
 void loop() {
+  handleButton();
   while (gpsSerial.available()) gps.encode(gpsSerial.read());
 
-  if (!gps.location.isValid() || !gps.date.isValid() || !gps.time.isValid()) return;
+  if (!gps.location.isValid() || !gps.date.isValid() || !gps.time.isValid())
+  { 
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.println("");
+    display.println("Last Log: ");
+    display.println(lastTimestamp);
+    display.print(lastLat, 4);
+    display.print(", ");
+    display.print(lastLng, 4);
+
+    display.display();
+    
+    return;
+  }
 
   TinyGPSDate date = gps.date;
   TinyGPSTime time = gps.time;
@@ -327,19 +416,31 @@ void loop() {
   display.setCursor(0, 0);
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
+
   display.println(toISO8601Local(date, time, timezoneOffsetHours));
-  display.println("");
-  display.println("Latitude: ");
+  display.setCursor(0,display.getCursorY() + 1);
+  display.print("Lat");
+  display.setCursor(8,display.getCursorY() + 4);
   display.setTextSize(2);
   if (lat>=0 && lat<100) display.print("  ");
   if (lat<0 && lat>-100) display.print(" ");
   display.println(lat, 5);
+
   display.setTextSize(1);
-  display.println("Longitude: ");
+  display.print("Lng");
+  display.setCursor(8,display.getCursorY() + 4);
   display.setTextSize(2);
   if (lng>=0 && lng<100) display.print("  ");
   if (lng<0 && lng>-100) display.print(" ");  
   display.println(lng, 5);
+
+  display.setTextSize(1);
+  display.println("Last Log: ");
+  display.println(lastTimestamp);
+  // display.print(lastLat, 4);
+  // display.print(", ");
+  // display.print(lastLng, 4);
+
   display.display();
 
 
@@ -373,6 +474,10 @@ void loop() {
       gpxFile.println("</trkpt>");
       gpxFile.flush();
     }
+
+    lastTimestamp = isoTimeLocal; // or isoTimeUTC if you prefer
+    lastLat = gps.location.lat();
+    lastLng = gps.location.lng();
 
     Serial.println(csv);
   }

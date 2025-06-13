@@ -11,7 +11,14 @@
         "settings": {
                 "files.associations": {
                         "ostream": "cpp",
-                        "iostream": "cpp"
+                        "iostream": "cpp",
+                        "chrono": "cpp",
+                        "random": "cpp",
+                        "limits": "cpp",
+                        "utility": "cpp",
+                        "optional": "cpp",
+                        "system_error": "cpp",
+                        "regex": "cpp"
                 }
         }
 }

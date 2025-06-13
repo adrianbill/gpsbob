@@ -29,30 +29,34 @@ fs::File gpxFile;
 bool gpxHeaderWritten = false;
 bool csvHeaderWritten = false;
 int timezoneOffsetHours = 0;            // Default UTC
-int LOG_INTERVAL = 10000;               // default 10 seconds
+int LOG_INTERVAL = 30000;               // default 30 seconds
+int LIVE_INTERVAL = 5000;               // default 5 seconds
 
 // === State ===
 String currentDateStr = "";
-String lastTimestamp = "----";
-unsigned long lastLogTime = 0;
+String lastTimestamp = "";
 double lastLat = 0.0;
 double lastLng = 0.0;
+unsigned long lastLogTime = 0;
+unsigned long lastLiveTime = 0;
+
 
 // === Wi-Fi ===
 AsyncWebServer server(80);
 String wifiSSID = "GPS_BOB";            // Default SSID
 String wifiPass = "12345678";           // Default password
+bool wifiStarted = false;
 
 // === Sleep & Modes ===
 #define BUTTON_PIN 0
-enum Mode { LOG_MODE, WIFI_MODE, LIVE_MODE };
+enum Mode {INFO_MODE, LIVE_MODE, LOG_MODE, WIFI_MODE};
 uint32_t buttonPressTime = 0;
 const uint16_t LONG_PRESS_MS = 3000; // Long press length, 3 seconds
 const uint16_t DEBOUNCE_MS = 50;
 bool sleepEnabled = false;
 bool buttonWasPressed = false;
-
-Mode currentMode = LIVE_MODE;           //Default Start_Mode
+Mode currentMode = INFO_MODE;           //Default Start_Mode
+// String Mode_Name = "Live Mode";         
 
 // === Utilities ===
 void loadConfig() {
@@ -100,6 +104,14 @@ void loadConfig() {
       if (interval >= 1000) LOG_INTERVAL = interval;
       Serial.print("Loaded log interval: ");
       Serial.print(LOG_INTERVAL / 1000);
+      Serial.println(" seconds");
+    }
+    else if (line.startsWith("live_interval=")) {
+      String val = line.substring(13);
+      int interval = val.toInt() * 1000;
+      if (interval >= 1000) LIVE_INTERVAL = interval;
+      Serial.print("Loaded live interval: ");
+      Serial.print(LIVE_INTERVAL / 1000);
       Serial.println(" seconds");
     }
   }
@@ -154,9 +166,7 @@ String toISO8601Local(TinyGPSDate date, TinyGPSTime time, int offsetHours) {
       days = 31;
       break;
     case 2:
-      if (new_year % 400 == 0) days = 29; //leap year
-      else if (new_year % 100 == 0) days = 28;
-      else if (new_year % 4 == 0) days = 29; //leap year
+      if (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) days = 29; //leap year
       else days = 28;
       break;
     case 3:
@@ -207,20 +217,42 @@ String gpsDateStamp(TinyGPSDate date) {
 }
 
 // === display tool (maybe reo) ===
-void displayMessage(const String &msg) {
+
+void displayText(const String &text, int size, int clear) {
+  if (clear == 1) 
+  {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+  }
+  
+  display.setTextSize(size);
+  display.println(text); 
+  display.display();
+}
+
+void displayData(const String &title, const String &timeLocal, double lat, double lng) {
   display.clearDisplay();
   display.setCursor(0, 0);
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.println(msg);
+  display.println(title);
+  display.println(timeLocal);
+  display.println("Latitude: ");
+  display.setTextSize(2);
+  if (lat>=0 && lat<100) display.print("  ");
+  if (lat<0 && lat>-100) display.print(" ");
+  display.println(lat, 5);
+  display.setTextSize(1);
+  display.println("Longitude: ");
+  display.setTextSize(2);
+  if (lng>=0 && lng<100) display.print("  ");
+  if (lng<0 && lng>-100) display.print(" ");  
+  display.println(lng, 5);
   display.display();
-}
-
+  }
 // === Logging ===
 void openLogFiles(const String &dateStr) {
   currentDateStr = dateStr;
-
-
 
   String csvName = "/log_" + currentDateStr + ".csv";
   bool newFile_csv = !SD.exists(csvName);
@@ -249,6 +281,44 @@ void openLogFiles(const String &dateStr) {
   }
 }
 
+void logData(const String &isoTimeLocal, const String &isoTimeUTC, int display_text){
+  double lat = gps.location.lat();
+  double lng = gps.location.lng();
+  int sats = gps.satellites.value();
+  double hdop = gps.hdop.hdop();
+
+  String csv =  isoTimeLocal + "," +
+              String(lat, 6) + "," +
+              String(lng, 6) + "," +
+              String(sats) + "," +
+              String(hdop, 2) + "," +
+              String(timezoneOffsetHours);
+
+  if (csvFile) {
+    csvFile.println(csv);
+    csvFile.flush();
+  }
+
+  if (gpxFile) {
+    gpxFile.print("<trkpt lat=\"");
+    gpxFile.print(lat, 6);
+    gpxFile.print("\" lon=\"");
+    gpxFile.print(lng, 6);
+    gpxFile.println("\">");
+    gpxFile.print("  <time>");
+    gpxFile.print(isoTimeUTC);
+    gpxFile.println("</time>");
+    gpxFile.println("</trkpt>");
+    gpxFile.flush();
+  }
+
+  Serial.println(csv);
+
+  lastTimestamp = isoTimeLocal;
+  lastLat = lat;
+  lastLng = lng;
+}
+
 void closeGPX() {
   if (gpxFile) {
     gpxFile.println("</trkseg></trk></gpx>");
@@ -259,6 +329,8 @@ void closeGPX() {
 
 // === Web Server ===
 void startWiFiServer() {
+  if (wifiStarted) return;
+  
   WiFi.softAP(wifiSSID.c_str(), wifiPass.c_str());
   IPAddress ip = WiFi.softAPIP();
 
@@ -305,15 +377,23 @@ void startWiFiServer() {
   });
 
   server.begin();
+  wifiStarted = true;
 
-  display.println("");
   display.println("WiFi Enabled");
   display.print("SSID:");
   display.println(wifiSSID);
   display.print("Addr: ");
-  // display.print("http://");
   display.println(ip);
   display.display();
+}
+
+void stopWiFiServer() {
+  if (!wifiStarted) return;
+  WiFi.softAPdisconnect(true);
+  server.end();
+  wifiStarted = false;
+  // displayText(Mode_Name,1,1);
+  // displayText("WIFI Off",1,0);
 }
 
 // === Button Handling ===
@@ -336,22 +416,80 @@ void handleButton() {
       sleepEnabled = !sleepEnabled;
       Serial.println(sleepEnabled ? "Entering Deep Sleep" : "Waking up");
       if (sleepEnabled) {
-        displayMessage("Entering Sleep...");
-        delay(1000);
+        displayText("Sleep\nEntering Sleep...\nLong Press Button to Wake up",1,1);
+        delay(3000);
         esp_deep_sleep_start();
       } else {
         // Just wake normally
-        currentMode = LOG_MODE;
+        currentMode = INFO_MODE;
       }
     } else {
       // Short press → cycle mode
-      currentMode = (Mode)((currentMode + 1) % 3);
+      currentMode = (Mode)((currentMode + 1) % 4);
       switch (currentMode) {
-        case LOG_MODE:  displayMessage("Log Mode"); break;
-        case WIFI_MODE: displayMessage("Wi-Fi Mode"); break;
-        case LIVE_MODE: displayMessage("Live Mode"); break;
+        case INFO_MODE:
+          stopWiFiServer();
+
+          loadConfig();
+
+          displayText("Info Mode", 1, 1);
+          display.println("");
+
+          display.print("Timezone offset: ");
+          display.println(timezoneOffsetHours);
+
+          display.print("Log interval: ");
+          display.print(LOG_INTERVAL / 1000);
+          display.println(" s");
+
+          display.print("Live interval: ");
+          display.print(LIVE_INTERVAL / 1000);
+          display.println(" s");
+
+          display.display();
+
+          Serial.println("Switch to INFO");
+          break;
+
+        case LOG_MODE:
+          stopWiFiServer();
+          // gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
+          displayData("Log Mode - Last Log",lastTimestamp,lastLat,lastLng);
+          Serial.println("Switch to LOG");
+          break;
+
+        case LIVE_MODE:       
+          stopWiFiServer();
+          // gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
+          displayData("Live Mode - Last Log",lastTimestamp,lastLat,lastLng);
+          // displayText("LIVE MODE - Last Log",1,1);
+          Serial.println("Switch to LIVE");
+          break;
+
+        case WIFI_MODE:
+          displayText("WIFI MODE",1,1);
+          // gpsSerial.end();
+          startWiFiServer();
+          Serial.println("Switch to WIFI");
+          break;
       }
-      delay(500);
+      // switch (currentMode) {
+      //   case LOG_MODE:  
+      //     Mode_Name = "Log Mode";
+      //     stopWiFiServer();
+      //     delay(2000);
+      //     break;
+      //   case WIFI_MODE: 
+      //     Mode_Name = "Wi-Fi Mode";
+      //     waiting = 2;
+      //     startWiFiServer();
+      //     break;
+      //   case LIVE_MODE: 
+      //     Mode_Name = "Live Mode";
+      //     stopWiFiServer();
+      //     delay(2000);
+      //     break;
+      // }
     }
   }
 }
@@ -365,120 +503,102 @@ void setup() {
   gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
   
   display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
-
-  if (!SD.begin(SD_CS)){
-    displayMessage("SD error");
-  } else {
-  loadConfig();
-  }
-
-  displayMessage("Waiting for GPS...");
-
-  startWiFiServer();
+  display.setTextColor(SSD1306_WHITE);
   
-  delay(10000);
+  while (!SD.begin(SD_CS)) displayText("Error\nSD Error\nCheck if installed and Reset",1,1);
+
+  loadConfig();
+
+  displayText("Info Mode", 1, 1);
+  display.println("");
+
+  display.print("Timezone offset: ");
+  display.println(timezoneOffsetHours);
+
+  display.print("Log interval: ");
+  display.print(LOG_INTERVAL / 1000);
+  display.println(" s");
+
+  display.print("Live interval: ");
+  display.print(LIVE_INTERVAL / 1000);
+  display.println(" s");
+
+  display.display();
+  // delay(5000);
 }
 
 // === Main Loop ===
 void loop() {
   handleButton();
+
+  if (currentMode == WIFI_MODE || currentMode == INFO_MODE) return;
+
   while (gpsSerial.available()) gps.encode(gpsSerial.read());
 
-  if (!gps.location.isValid() || !gps.date.isValid() || !gps.time.isValid())
-  { 
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.println("");
-    display.println("Last Log: ");
-    display.println(lastTimestamp);
-    display.print(lastLat, 4);
-    display.print(", ");
-    display.print(lastLng, 4);
+  if (!gps.location.isValid() || !gps.date.isValid() || !gps.time.isValid()) return;
 
-    display.display();
-    
-    return;
-  }
+//   if (!gps.location.isValid() || !gps.date.isValid() || !gps.time.isValid()){
+//     if (waiting == 0) {
+//       // displayText("Mode_Name",1,1);
+//       displayText("Waiting for GPS...",1,0);
+//       waiting = 1;
+//       Serial.println("Waiting for GPS...");
+//       return;
+//     } else if (waiting == 1) return;
+//   }
 
+  // if (!gps.location.isValid() || !gps.date.isValid() || !gps.time.isValid()) {
+  //   Serial.println("No valid GPS data yet...");
+  //   Serial.print("Chars processed: "); Serial.println(gps.charsProcessed());
+  //   displayText("Waiting for GPS...", 1, 1);
+  //   delay(2000); // slow refresh to avoid flicker
+  //   return;
+  // }
+  
+  // Get timestamp info
   TinyGPSDate date = gps.date;
   TinyGPSTime time = gps.time;
 
   String today = gpsDateStamp(date);
+
+  String isoTimeLocal = toISO8601Local(date, time, timezoneOffsetHours);
+  String isoTimeUTC = toISO8601(date, time);
+
+  double lat = gps.location.lat();
+  double lng = gps.location.lng();
+  int sats = gps.satellites.value();
+  double hdop = gps.hdop.hdop();
+
+  String csv =  isoTimeLocal + "," +
+              String(lat, 6) + "," +
+              String(lng, 6) + "," +
+              String(sats) + "," +
+              String(hdop, 2) + "," +
+              String(timezoneOffsetHours);
+
+  // Switch logging file if date changed
   if (today != currentDateStr) {
     closeGPX();
     openLogFiles(today);
   }
 
-  double lat = gps.location.lat();
-  double lng = gps.location.lng();
+  switch (currentMode) {
+    case LIVE_MODE:
+      if (millis() - lastLiveTime >= LIVE_INTERVAL) {
+        displayData("Live Mode - Int " + String(LIVE_INTERVAL / 1000) + " s",isoTimeLocal,lat,lng);
+        logData(isoTimeLocal, isoTimeUTC, 1);
+        lastLiveTime = millis();
+      }
+      // displayData("Live Mode",isoTimeLocal,lat,lng);
+      break;
 
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-
-  display.println(toISO8601Local(date, time, timezoneOffsetHours));
-  display.setCursor(0,display.getCursorY() + 1);
-  display.print("Lat");
-  display.setCursor(8,display.getCursorY() + 4);
-  display.setTextSize(2);
-  if (lat>=0 && lat<100) display.print("  ");
-  if (lat<0 && lat>-100) display.print(" ");
-  display.println(lat, 5);
-
-  display.setTextSize(1);
-  display.print("Lng");
-  display.setCursor(8,display.getCursorY() + 4);
-  display.setTextSize(2);
-  if (lng>=0 && lng<100) display.print("  ");
-  if (lng<0 && lng>-100) display.print(" ");  
-  display.println(lng, 5);
-
-  display.setTextSize(1);
-  display.println("Last Log: ");
-  display.println(lastTimestamp);
-  // display.print(lastLat, 4);
-  // display.print(", ");
-  // display.print(lastLng, 4);
-
-  display.display();
-
-
-  if (millis() - lastLogTime >= LOG_INTERVAL) {
-    lastLogTime = millis();
-
-    String isoTimeLocal = toISO8601Local(date, time, timezoneOffsetHours);
-    String isoTimeUTC = toISO8601(date, time);
-
-    String csv =  isoTimeLocal + "," +
-                  String(gps.location.lat(), 6) + "," +
-                  String(gps.location.lng(), 6) + "," +
-                  String(gps.satellites.value()) + "," +
-                  String(gps.hdop.hdop(), 2) + "," +
-                  String(timezoneOffsetHours);
-
-    if (csvFile) {
-      csvFile.println(csv);
-      csvFile.flush();
-    }
-
-    if (gpxFile) {
-      gpxFile.print("<trkpt lat=\"");
-      gpxFile.print(gps.location.lat(), 6);
-      gpxFile.print("\" lon=\"");
-      gpxFile.print(gps.location.lng(), 6);
-      gpxFile.println("\">");
-      gpxFile.print("  <time>");
-      gpxFile.print(isoTimeUTC);
-      gpxFile.println("</time>");
-      gpxFile.println("</trkpt>");
-      gpxFile.flush();
-    }
-
-    lastTimestamp = isoTimeLocal; // or isoTimeUTC if you prefer
-    lastLat = gps.location.lat();
-    lastLng = gps.location.lng();
-
-    Serial.println(csv);
+    case LOG_MODE:
+      if (millis() - lastLogTime >= LOG_INTERVAL) {
+        Serial.println("Logging");
+        displayData("Log Mode - Int " + String(LOG_INTERVAL / 1000) + " s",isoTimeLocal,lat,lng);
+        logData(isoTimeLocal, isoTimeUTC, 1);
+        lastLogTime = millis();
+      }
+      break;
   }
 }

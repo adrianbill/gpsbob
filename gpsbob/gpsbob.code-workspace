@@ -18,7 +18,13 @@
                         "utility": "cpp",
                         "optional": "cpp",
                         "system_error": "cpp",
-                        "regex": "cpp"
+                        "regex": "cpp",
+                        "istream": "cpp",
+                        "ratio": "cpp",
+                        "array": "cpp",
+                        "functional": "cpp",
+                        "tuple": "cpp",
+                        "type_traits": "cpp"
                 }
         }
 }

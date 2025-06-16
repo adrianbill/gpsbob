@@ -36,16 +36,13 @@ int LIVE_INTERVAL = 5000;               // default 5 seconds
 
 // === State ===
 String currentDateStr = "";
-String lastTimestamp = "";
-double lastLat = 0.0;
-double lastLng = 0.0;
+String lastTimestamp = "Defualt Location";
+double lastLat = 48.424970;
+double lastLng = -123.373445;
 unsigned long lastLogTime = 0;
 unsigned long lastLiveTime = 0;
 double WaypointLat = 0.0;
 double WaypointLng = 0.0;
-double distance = 0.0;
-double courseToWaypoint = 0.0;
-const char *cardinal = "";
 
 // === Wi-Fi ===
 AsyncWebServer server(80);
@@ -63,7 +60,7 @@ const uint16_t DEBOUNCE_MS = 50;
 bool sleepEnabled = false;
 bool buttonWasPressed = false;
 Mode currentMode = INFO_MODE;           //Default Start_Mode
-int waiting = 0;
+bool update_display = false;
 // String Mode_Name = "Live Mode";         
 
 // === Utilities ===
@@ -251,26 +248,113 @@ void displayText(const String &text, int size, int clear) {
   display.display();
 }
 
-void displayData(const String &title, const String &timeLocal, double lat, double lng) {
+void displayGPSData(const String &title, const String &timeLocal, double lat, double lng) {
   display.clearDisplay();
   display.setCursor(0, 0);
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.println(title);
   display.println(timeLocal);
-  display.println("Latitude: ");
+  display.println("Lat");
   display.setTextSize(2);
+  display.setCursor(2, display.getCursorY());
   if (lat>=0 && lat<100) display.print("  ");
   if (lat<0 && lat>-100) display.print(" ");
   display.println(lat, 5);
   display.setTextSize(1);
-  display.println("Longitude: ");
+  display.println("Lon");
   display.setTextSize(2);
+  display.setCursor(2, display.getCursorY());
   if (lng>=0 && lng<100) display.print("  ");
   if (lng<0 && lng>-100) display.print(" ");  
   display.println(lng, 5);
   display.display();
   }
+
+void displayNAVData(const String &title, const String &timeLocal, double GPSlat, double GPSlng, double WAYlat, double WAYlng) {
+  
+  double distance = TinyGPSPlus::distanceBetween(lastLat, lastLng, WaypointLat, WaypointLng);
+  double courseToWaypoint = TinyGPSPlus::courseTo(lastLat, lastLng, WaypointLat, WaypointLng);
+  const char *cardinal = TinyGPSPlus::cardinal(courseToWaypoint);
+  
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.println(title);
+  display.println(timeLocal);
+
+  char buffer[16];
+
+  if (distance < 1000) sprintf(buffer, " %4.1f m", distance);
+  else if (distance < 1000000) sprintf(buffer, " %5.1f km", distance / 1000.0);
+  else sprintf(buffer, " >1000 km");
+
+  display.printf("%8.4f, %8.4f",WaypointLat, WaypointLng);
+  display.println("");
+  display.setCursor(0, display.getCursorY() + 4);
+  display.setTextSize(2);
+  display.print(buffer);
+  
+  Serial.print("Distance: ");
+  Serial.println(buffer);
+
+  display.setTextSize(1);
+  display.println("");
+  int x = display.getCursorX();
+  int y = display.getCursorY();
+
+  display.setCursor(x, y + 4);
+
+  sprintf(buffer, " %5.1f", courseToWaypoint);
+
+  display.println("");
+  display.setTextSize(2);
+  display.print(buffer);
+  x = display.getCursorX();
+  y = display.getCursorY();
+  display.drawCircle(x + 2, y - 1, 3, WHITE); // nice looking degree symbol  
+  display.setTextSize(1);  
+  x = display.getCursorX();
+  y = display.getCursorY();
+  display.println("");
+  display.setCursor(x, (display.getCursorY() + y ) / 2);
+  display.print("  (");
+  display.print(cardinal);
+  display.print(")");
+  display.display();
+
+  Serial.print("Bearing: ");
+  Serial.print(buffer);
+  Serial.print("° (");
+  Serial.print(cardinal);
+  Serial.println(")");
+  }
+
+void displayInfo() {
+  displayText("Info Mode\n", 1, 1);
+
+  display.print("Timezone offset: ");
+  display.println(timezoneOffsetHours);
+
+  display.print("Log interval: ");
+  display.print(LOG_INTERVAL / 1000);
+  display.println(" s");
+
+  display.print("Live interval: ");
+  display.print(LIVE_INTERVAL / 1000);
+  display.println(" s");
+
+  char buffer [20];
+
+  display.println("Waypoint");
+  sprintf(buffer, " Lat: %11.6f", WaypointLat);
+  display.println(buffer);
+  sprintf(buffer, " Lon: %11.6f", WaypointLng);
+  display.print(buffer);
+
+  display.display();
+}
 // === Logging ===
 void openLogFiles(const String &dateStr) {
   currentDateStr = dateStr;
@@ -334,10 +418,6 @@ void logData(const String &isoTimeLocal, const String &isoTimeUTC, int display_t
   }
 
   Serial.println(csv);
-
-  lastTimestamp = isoTimeLocal;
-  lastLat = lat;
-  lastLng = lng;
 }
 
 void closeGPX() {
@@ -494,8 +574,6 @@ void stopWiFiServer() {
   WiFi.softAPdisconnect(true);
   server.end();
   wifiStarted = false;
-  // displayText(Mode_Name,1,1);
-  // displayText("WIFI Off",1,0);
 }
 
 // === Button Handling ===
@@ -534,26 +612,7 @@ void handleButton() {
 
           loadConfig();
 
-          displayText("Info Mode\n", 1, 1);
-
-          display.print("Timezone offset: ");
-          display.println(timezoneOffsetHours);
-
-          display.print("Log interval: ");
-          display.print(LOG_INTERVAL / 1000);
-          display.println(" s");
-
-          display.print("Live interval: ");
-          display.print(LIVE_INTERVAL / 1000);
-          display.println(" s");
-
-          display.println("Waypoint");
-          display.print(" Lat: ");
-          display.println(WaypointLat,6);
-          display.print(" Lon: ");
-          display.println(WaypointLng,6);
-
-          display.display();
+          displayInfo();
 
           Serial.println("Switch to INFO");
           break;
@@ -561,19 +620,19 @@ void handleButton() {
         case LOG_MODE:
           stopWiFiServer();
           Serial.println("Switch to LOG");
-          waiting = 0;
+          update_display = true;
           break;
 
         case LIVE_MODE:       
           stopWiFiServer();
           Serial.println("Switch to LIVE");
-          waiting = 0;
+          update_display = true;
           break;
 
         case NAV_MODE:       
           stopWiFiServer();
           Serial.println("Switch to NAV");
-          waiting = 0;
+          update_display = true;
           break;
         
         case WIFI_MODE:
@@ -617,102 +676,40 @@ void setup() {
 
   currentMode = INFO_MODE;
 
-  displayText("Info Mode\n", 1, 1);
+  displayInfo();
 
-  display.print("Timezone offset: ");
-  display.println(timezoneOffsetHours);
-
-  display.print("Log interval: ");
-  display.print(LOG_INTERVAL / 1000);
-  display.println(" s");
-
-  display.print("Live interval: ");
-  display.print(LIVE_INTERVAL / 1000);
-  display.println(" s");
-
-  display.println("Waypoint");
-  display.print(" Lat: ");
-  display.println(WaypointLat,6);
-  display.print(" Lon: ");
-  display.println(WaypointLng,6);
-
-  display.display();
-  // delay(5000);
 }
 
 // === Main Loop ===
 void loop() {
   handleButton();
 
-  if (currentMode == WIFI_MODE || currentMode == INFO_MODE) return;
+  // if (currentMode == WIFI_MODE || currentMode == INFO_MODE) return;
+  if (currentMode == WIFI_MODE) return;
 
   while (gpsSerial.available()) gps.encode(gpsSerial.read());
 
   if (!gps.location.isValid() || !gps.date.isValid() || !gps.time.isValid()) {
-    if (waiting == 0) { 
-      waiting = 1;
+    if (update_display) { 
+      update_display = false;
       switch (currentMode) {
         case LOG_MODE:
-          displayData("Log Mode - Last Log",lastTimestamp,lastLat,lastLng);
+          displayGPSData("Log Mode - Last Log",lastTimestamp,lastLat,lastLng);
           return;
         case LIVE_MODE:       
-          displayData("Live Mode - Last Log",lastTimestamp,lastLat,lastLng);
+          displayGPSData("Live Mode - Last Log",lastTimestamp,lastLat,lastLng);
           return;
         case NAV_MODE:
-          distance = TinyGPSPlus::distanceBetween(lastLat, lastLng, WaypointLat, WaypointLng);
-          courseToWaypoint = TinyGPSPlus::courseTo(lastLat, lastLng, WaypointLat, WaypointLng);
-          cardinal = TinyGPSPlus::cardinal(courseToWaypoint);
-
-          Serial.print("Distance to waypoint: ");
-          Serial.print(distance, 1);
-          Serial.println(" m");
-
-          Serial.print("Bearing to waypoint: ");
-          Serial.print(courseToWaypoint, 2);
-          Serial.print("° (");
-          Serial.print(cardinal);
-          Serial.println(")");
-
-          display.clearDisplay();
-          display.setCursor(0,0);
-          display.setTextSize(1);
-          display.println("NAV Mode\n");
-          display.println("Distance");
-          display.setTextSize(2);
-          if (distance >= 1000000)
-          {
-            display.print(distance / 1000.0, 0); // km
-            display.println(" km");
-          } 
-          else if (distance >= 1000)
-          {
-            display.print(distance / 1000.0, 2); // km
-            display.println(" km");
-          } else
-          {
-            display.print(distance, 1); // m
-            display.println(" m");
-          }
-          display.setTextSize(1);
-          display.println("Bearing");
-          display.setTextSize(2);
-          display.print(courseToWaypoint, 1);
-          display.drawCircle(display.getCursorX() + 2, display.getCursorY() + 3, 3, WHITE);
-          // display.setCursor(display.getCursorX(),display.getCursorY() - 4);
-          // display.write(0xF8);
-          display.print(" (");
-          display.print(cardinal);
-          display.println(")");
-
-          display.display();
-          lastLiveTime = millis();
-          // delay(1000);
-        return;
-      }  
+          displayNAVData("NAV Mode - Last Log", lastTimestamp, lastLat, lastLng, WaypointLat, WaypointLng);
+          return;
+        default:
+          return;
+      }
     } else return;
   }
   
-  waiting = 0;
+  update_display = true;
+
   // Get timestamp info
   TinyGPSDate date = gps.date;
   TinyGPSTime time = gps.time;
@@ -744,72 +741,34 @@ void loop() {
   switch (currentMode) {
     case LIVE_MODE:
       if (millis() - lastLiveTime >= LIVE_INTERVAL) {
-        displayData("Live Mode - Int " + String(LIVE_INTERVAL / 1000) + " s",isoTimeLocal,lat,lng);
+        displayGPSData("Live Mode - Int " + String(LIVE_INTERVAL / 1000) + " s", isoTimeLocal, lat, lng);
         logData(isoTimeLocal, isoTimeUTC, 1);
+        lastTimestamp = isoTimeLocal;
+        lastLat = lat;
+        lastLng = lng;
         lastLiveTime = millis();
       }
-      // displayData("Live Mode",isoTimeLocal,lat,lng);
       break;
 
     case LOG_MODE:
       if (millis() - lastLogTime >= LOG_INTERVAL) {
         Serial.println("Logging");
-        displayData("Log Mode - Int " + String(LOG_INTERVAL / 1000) + " s",isoTimeLocal,lat,lng);
+        displayGPSData("Log Mode - Int " + String(LOG_INTERVAL / 1000) + " s", isoTimeLocal, lat, lng);
         logData(isoTimeLocal, isoTimeUTC, 1);
+        lastTimestamp = isoTimeLocal;
+        lastLat = lat;
+        lastLng = lng;
         lastLogTime = millis();
       }
       break;
 
     case NAV_MODE: 
        if (millis() - lastLiveTime >= LIVE_INTERVAL) {
-        distance = TinyGPSPlus::distanceBetween(lastLat, lastLng, WaypointLat, WaypointLng);
-        courseToWaypoint = TinyGPSPlus::courseTo(lastLat, lastLng, WaypointLat, WaypointLng);
-        cardinal = TinyGPSPlus::cardinal(courseToWaypoint);
-
-        Serial.print("Distance to waypoint: ");
-        Serial.print(distance, 1);
-        Serial.println(" m");
-
-        Serial.print("Bearing to waypoint: ");
-        Serial.print(courseToWaypoint, 2);
-        Serial.print("° (");
-        Serial.print(cardinal);
-        Serial.println(")");
-
-        display.clearDisplay();
-        display.setCursor(0,0);
-        display.setTextSize(1);
-        display.println("NAV Mode\n");
-        display.println("Distance");
-        display.setTextSize(2);
-        if (distance >= 1000000)
-        {
-          display.print(distance / 1000.0, 0); // km
-          display.println(" km");
-        } 
-        else if (distance >= 1000)
-        {
-          display.print(distance / 1000.0, 2); // km
-          display.println(" km");
-        } else
-        {
-          display.print(distance, 1); // m
-          display.println(" m");
-        }
-        display.setTextSize(1);
-        display.println("Bearing");
-        display.setTextSize(2);
-        display.print(courseToWaypoint, 1);
-        display.drawCircle(display.getCursorX() + 2, display.getCursorY() + 3, 3, WHITE);
-        // display.setCursor(display.getCursorX(),display.getCursorY() - 4);
-        // display.write(0xF8);
-        display.print(" (");
-        display.print(cardinal);
-        display.println(")");
-
-        display.display();
+        displayNAVData("NAV Mode - Live", lastTimestamp, lat, lng, WaypointLat, WaypointLng);
+        lastTimestamp = isoTimeLocal;
+        lastLat = lat;
+        lastLng = lng;
         lastLiveTime = millis();
-        // delay(1000);
       }
       break;
   }

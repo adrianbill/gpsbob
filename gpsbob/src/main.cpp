@@ -36,9 +36,11 @@ int LIVE_INTERVAL = 5000;               // default 5 seconds
 
 // === State ===
 String currentDateStr = "";
-String lastTimestamp = "Defualt Location";
-double lastLat = 48.424970;
-double lastLng = -123.373445;
+String lastTimestamp = "Waiting for GPS";
+// double lastLat = 48.424970;
+// double lastLng = -123.373445;
+double lastLat = 0.0;
+double lastLng = 0.0;
 unsigned long lastLogTime = 0;
 unsigned long lastLiveTime = 0;
 double WaypointLat = 0.0;
@@ -60,7 +62,8 @@ const uint16_t DEBOUNCE_MS = 50;
 bool sleepEnabled = false;
 bool buttonWasPressed = false;
 Mode currentMode = INFO_MODE;           //Default Start_Mode
-bool update_display = false;
+bool update_display = true;
+bool first_load = true;
 // String Mode_Name = "Live Mode";         
 
 // === Utilities ===
@@ -135,6 +138,34 @@ void loadConfig() {
     }
   }
   config.close();
+}
+
+bool replaceConfigLine(const char* filename, const String& key, const String& newValue) {
+  File original = SD.open(filename, FILE_READ);
+  if (!original) return false;
+
+  File temp = SD.open("/temp.txt", FILE_WRITE);
+  if (!temp) {
+    original.close();
+    return false;
+  }
+
+  while (original.available()) {
+    String line = original.readStringUntil('\n');
+    line.trim(); // Remove \r and whitespace
+    if (line.startsWith(key + "=")) {
+      temp.println(key + "=" + newValue);
+    } else {
+      temp.println(line);
+    }
+  }
+
+  original.close();
+  temp.close();
+
+  SD.remove(filename);
+  SD.rename("/temp.txt", filename);
+  return true;
 }
 
 // === Date & Time conversion ===
@@ -286,9 +317,20 @@ void displayNAVData(const String &title, const String &timeLocal, double GPSlat,
 
   char buffer[16];
 
-  if (distance < 1000) sprintf(buffer, " %4.1f m", distance);
-  else if (distance < 1000000) sprintf(buffer, " %5.1f km", distance / 1000.0);
-  else sprintf(buffer, " >1000 km");
+  if (distance < 1000) sprintf(buffer, "%5.f m", distance);
+  else if (distance < 10000000) sprintf(buffer, " %6.1f km", distance / 1000.0);
+  else {
+    sprintf(buffer, ">10,000 km");
+    display.printf("%8.4f, %8.4f",WaypointLat, WaypointLng);
+    display.println("");
+    display.setCursor(0, display.getCursorY() + 4);
+    display.setTextSize(2);
+    display.print(buffer);
+    
+    display.print("  Nav OFF");
+    display.display();
+    return;
+  }
 
   display.printf("%8.4f, %8.4f",WaypointLat, WaypointLng);
   display.println("");
@@ -296,8 +338,8 @@ void displayNAVData(const String &title, const String &timeLocal, double GPSlat,
   display.setTextSize(2);
   display.print(buffer);
   
-  Serial.print("Distance: ");
-  Serial.println(buffer);
+  // Serial.print("Distance: ");
+  // Serial.println(buffer);
 
   display.setTextSize(1);
   display.println("");
@@ -306,7 +348,7 @@ void displayNAVData(const String &title, const String &timeLocal, double GPSlat,
 
   display.setCursor(x, y + 4);
 
-  sprintf(buffer, " %5.1f", courseToWaypoint);
+  sprintf(buffer, " %6.1f", courseToWaypoint);
 
   display.println("");
   display.setTextSize(2);
@@ -319,16 +361,16 @@ void displayNAVData(const String &title, const String &timeLocal, double GPSlat,
   y = display.getCursorY();
   display.println("");
   display.setCursor(x, (display.getCursorY() + y ) / 2);
-  display.print("  (");
+  display.print(" (");
   display.print(cardinal);
   display.print(")");
   display.display();
 
-  Serial.print("Bearing: ");
-  Serial.print(buffer);
-  Serial.print("° (");
-  Serial.print(cardinal);
-  Serial.println(")");
+  // Serial.print("Bearing: ");
+  // Serial.print(buffer);
+  // Serial.print("° (");
+  // Serial.print(cardinal);
+  // Serial.println(")");
   }
 
 void displayInfo() {
@@ -440,15 +482,44 @@ void startWiFiServer() {
   // Root route
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     String html = R"rawliteral(
+      <!DOCTYPE html>
+      <html>
+      <head>
         <meta name='viewport' content='width=device-width, initial-scale=1'>
         <style>
-          body { font-family: sans-serif; padding: 1em; }
-          input, select { width: 100%; padding: 0.5em; margin: 0.5em 0; font-size: 1em; }
-          input[type=submit] { background: #007bff; color: white; border: none; border-radius: 5px; }
-          a { display: block; margin: 0.5em 0; color: #007bff; text-decoration: none; }
+          body { 
+            font-family: sans-serif; 
+            padding: 1em; 
+          }
+          input, select { 
+            width: 100%; 
+            padding: 0.5em; 
+            margin: 0.5em 0; 
+            font-size: 1em; 
+          }
+
+          .button {
+            display: inline-block;
+            width: 100%;
+            padding: 0.5em;
+            margin: 1em 0 0 0;
+            font-size: 1em;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            text-align: center;
+            text-decoration: none;
+          }
+          h1 {
+            margin-bottom: 0.5em;
+          }
         </style>
-        <h2>GPS Logger File Server</h2>
-        <a href='/config'>Edit Config</a><br>
+      </head>
+      <body>
+        <h2>GPS BOB</h2>
+        <a class='button' href='/Waypoint'>Waypoint</a>
+        <a class='button' href='/Settings'>Settings</a>
         <ul>
       )rawliteral";
 
@@ -467,11 +538,103 @@ void startWiFiServer() {
     request->send(200, "text/html", html);
   });
 
-  // Config GET
-  server.on("/config", HTTP_GET, [](AsyncWebServerRequest *request) {
+    // Waypoint GET
+  server.on("/Waypoint", HTTP_GET, [](AsyncWebServerRequest *request) {
     File f = SD.open("/config.txt");
     if (!f) {
-      request->send(500, "text/plain", "Failed to open config.txt");
+      request->send(500, "text/plain", "Failed to open Waypoint file");
+      return;
+    }
+
+    String WayLat = "0", WayLng = "0";
+    while (f.available()) {
+      String line = f.readStringUntil('\n');
+      if (line.startsWith("Latitude=")) WayLat = line.substring(9);
+      if (line.startsWith("Longitude=")) WayLng = line.substring(10);
+    }
+    f.close();
+
+    String html = R"rawliteral(
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta name='viewport' content='width=device-width, initial-scale=1'>
+        <style>
+          body { 
+            font-family: sans-serif; 
+            padding: 1em; 
+          }
+          input, select { 
+            width: 100%; 
+            padding: 0.5em; 
+            margin: 0.5em 0; 
+            font-size: 1em; 
+          }
+
+          .button {
+            display: inline-block;
+            width: 100%;
+            padding: 0.5em;
+            margin: 1em 0 0 0;
+            font-size: 1em;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            text-align: center;
+            text-decoration: none;
+          }
+          h1 {
+            margin-bottom: 0.5em;
+          }
+        </style>
+      </head>
+      <body>
+        <h2>Waypoint</h2>
+        <form method='POST' action='/Waypoint'>
+    )rawliteral";
+        html += "Latitude: <input name='WayLat' value='" + WayLat + "'><br>";
+        html += "Longitude: <input name='WayLng' value='" + WayLng + "'><br>";
+        html += "<input type='submit' class='button' value='Save'>";
+        html += "</form>";
+        html += "<a class='button' href='/'>Main Menu</a>";
+        html += "</body></html>";
+        
+    request->send(200, "text/html", html);
+  });
+
+// Config: POST
+  server.on("/Waypoint", HTTP_POST, [](AsyncWebServerRequest *request){
+    String WayLat  = request->getParam("WayLat", true)->value();
+    String WayLng  = request->getParam("WayLng", true)->value();
+
+    Serial.println("Writing new waypoint:");
+    Serial.println("LAT: " + WayLat);
+    Serial.println("LNG: " + WayLng);
+
+    replaceConfigLine("/config.txt", "Latitude", WayLat.c_str());
+    replaceConfigLine("/config.txt", "Longitude", WayLng.c_str());
+    // SD.remove("/config.txt");
+    // File f = SD.open("/config.txt", FILE_WRITE);
+
+    // if (!f) {
+    //   request->send(500, "text/plain", "Failed to save waypoint");
+    //   return;
+    // }
+    // f.printf("Latitude=%s\n", WayLat.c_str());
+    // f.printf("Longitude=%s\n", WayLng.c_str());
+    // f.close();
+
+
+
+    request->redirect("/Waypoint");
+  });
+
+  // Settings GET
+  server.on("/Settings", HTTP_GET, [](AsyncWebServerRequest *request) {
+    File f = SD.open("/config.txt");
+    if (!f) {
+      request->send(500, "text/plain", "Failed to open Settings file");
       return;
     }
 
@@ -489,14 +652,43 @@ void startWiFiServer() {
     f.close();
 
     String html = R"rawliteral(
+             <!DOCTYPE html>
+      <html>
+      <head>
         <meta name='viewport' content='width=device-width, initial-scale=1'>
         <style>
-          body { font-family: sans-serif; padding: 1em; }
-          input, select { width: 100%; padding: 0.5em; margin: 0.5em 0; font-size: 1em; }
-          input[type=submit] { background: #007bff; color: white; border: none; border-radius: 5px; }
-          a { display: block; margin: 0.5em 0; color: #007bff; text-decoration: none; }
+          body { 
+            font-family: sans-serif; 
+            padding: 1em; 
+          }
+          input, select { 
+            width: 100%; 
+            padding: 0.5em; 
+            margin: 0.5em 0; 
+            font-size: 1em; 
+          }
+
+          .button {
+            display: inline-block;
+            width: 100%;
+            padding: 0.5em;
+            margin: 1em 0 0 0;
+            font-size: 1em;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            text-align: center;
+            text-decoration: none;
+          }
+          h1 {
+            margin-bottom: 0.5em;
+          }
         </style>
-        <form method='POST' action='/config'>
+      </head>
+      <body>
+        <h2>Settings</h2>
+        <form method='POST' action='/Settings'>
       )rawliteral";
 
         html += "SSID: <input name='ssid' value='" + ssid + "'><br>";
@@ -504,16 +696,19 @@ void startWiFiServer() {
         html += "Timezone Offset: <input name='tz' value='" + tz + "'><br>";
         html += "Log Interval (seconds): <input name='log' value='" + log + "'><br>";
         html += "Live Update (seconds): <input name='live' value='" + live + "'><br>";
-        html += "Waypoint<br>";
+        html += "<h4>Waypoint</h4>";
         html += "Latitude: <input name='WayLat' value='" + WayLat + "'><br>";
         html += "Longitude: <input name='WayLng' value='" + WayLng + "'><br>";
-        html += "<input type='submit' value='Save'></form>";
-
+        html += "<input type='submit' class='button' value='Save'>";
+        html += "</form>";
+        html += "<a class='button' href='/'>Main Menu</a>";
+        html += "</body></html>";
+        
     request->send(200, "text/html", html);
   });
 
 // Config: POST
-  server.on("/config", HTTP_POST, [](AsyncWebServerRequest *request){
+  server.on("/Settings", HTTP_POST, [](AsyncWebServerRequest *request){
     String ssid    = request->getParam("ssid", true)->value();
     String pass    = request->getParam("password", true)->value();
     String tz      = request->getParam("tz", true)->value();
@@ -534,7 +729,7 @@ void startWiFiServer() {
     SD.remove("/config.txt");
     File f = SD.open("/config.txt", FILE_WRITE);
     if (!f) {
-      request->send(500, "text/plain", "Failed to write config.txt");
+      request->send(500, "text/plain", "Failed to save settings");
       return;
     }
 
@@ -547,7 +742,7 @@ void startWiFiServer() {
     f.printf("Longitude=%s\n", WayLng.c_str());
     f.close();
 
-    request->redirect("/config");
+    request->redirect("/settings");
   });
 
   // Serve all static files from SD
@@ -609,7 +804,7 @@ void handleButton() {
       switch (currentMode) {
         case INFO_MODE:
           stopWiFiServer();
-
+          
           loadConfig();
 
           displayInfo();
@@ -617,33 +812,33 @@ void handleButton() {
           Serial.println("Switch to INFO");
           break;
 
-        case LOG_MODE:
-          stopWiFiServer();
-          Serial.println("Switch to LOG");
-          update_display = true;
-          break;
-
         case LIVE_MODE:       
           stopWiFiServer();
           Serial.println("Switch to LIVE");
-          update_display = true;
+          first_load = true;
+          break;
+
+        case LOG_MODE:
+          stopWiFiServer();
+          Serial.println("Switch to LOG");
+          first_load = true;
           break;
 
         case NAV_MODE:       
           stopWiFiServer();
           Serial.println("Switch to NAV");
-          update_display = true;
+          first_load = true;
           break;
         
         case WIFI_MODE:
           displayText("WIFI MODE",1,1);
           // gpsSerial.end();
           startWiFiServer();
-          delay(1000);
           displayText("\nWIFI Enabled",1,0);
           Serial.println("Switch to WIFI");
           break;
       }
+      update_display = true;
     }
   }
 }
@@ -689,15 +884,17 @@ void loop() {
 
   while (gpsSerial.available()) gps.encode(gpsSerial.read());
 
+  if (currentMode == INFO_MODE) return;
+
   if (!gps.location.isValid() || !gps.date.isValid() || !gps.time.isValid()) {
     if (update_display) { 
       update_display = false;
       switch (currentMode) {
-        case LOG_MODE:
-          displayGPSData("Log Mode - Last Log",lastTimestamp,lastLat,lastLng);
+        case LIVE_MODE:    
+          displayGPSData("Live Mode - Last Log", lastTimestamp, lastLat, lastLng);
           return;
-        case LIVE_MODE:       
-          displayGPSData("Live Mode - Last Log",lastTimestamp,lastLat,lastLng);
+        case LOG_MODE:
+          displayGPSData("Log Mode - Last Log", lastTimestamp, lastLat, lastLng);
           return;
         case NAV_MODE:
           displayNAVData("NAV Mode - Last Log", lastTimestamp, lastLat, lastLng, WaypointLat, WaypointLng);
@@ -740,18 +937,19 @@ void loop() {
 
   switch (currentMode) {
     case LIVE_MODE:
-      if (millis() - lastLiveTime >= LIVE_INTERVAL) {
+      if ((millis() - lastLiveTime >= LIVE_INTERVAL) || first_load) {
         displayGPSData("Live Mode - Int " + String(LIVE_INTERVAL / 1000) + " s", isoTimeLocal, lat, lng);
-        logData(isoTimeLocal, isoTimeUTC, 1);
+        // logData(isoTimeLocal, isoTimeUTC, 1);
         lastTimestamp = isoTimeLocal;
         lastLat = lat;
         lastLng = lng;
         lastLiveTime = millis();
+        first_load = false;
       }
       break;
 
     case LOG_MODE:
-      if (millis() - lastLogTime >= LOG_INTERVAL) {
+      if ((millis() - lastLogTime >= LOG_INTERVAL) || first_load) {
         Serial.println("Logging");
         displayGPSData("Log Mode - Int " + String(LOG_INTERVAL / 1000) + " s", isoTimeLocal, lat, lng);
         logData(isoTimeLocal, isoTimeUTC, 1);
@@ -759,16 +957,18 @@ void loop() {
         lastLat = lat;
         lastLng = lng;
         lastLogTime = millis();
+        first_load = false;
       }
       break;
 
     case NAV_MODE: 
-       if (millis() - lastLiveTime >= LIVE_INTERVAL) {
+       if ((millis() - lastLiveTime >= LIVE_INTERVAL) || first_load) {
         displayNAVData("NAV Mode - Live", lastTimestamp, lat, lng, WaypointLat, WaypointLng);
         lastTimestamp = isoTimeLocal;
         lastLat = lat;
         lastLng = lng;
         lastLiveTime = millis();
+        first_load = false;
       }
       break;
   }

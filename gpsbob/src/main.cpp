@@ -11,6 +11,30 @@
 
 // #include "esp_sleep.h"
 
+/* 
+SPI  2							
+GPIO 13 MISO
+GPIO 12 CLK
+GPIO 11 MOSI
+GPIO 10 CS
+
+I2C
+GPIO 9 (SCL)
+GPIO 8 (SDA) 
+
+ */
+
+// static const uint8_t SDA = 8;
+// static const uint8_t SCL = 9;
+
+#define SDA 8
+#define SCL 9
+
+#define SD_CS 10 // 10
+#define GPS_RX TX// default
+#define GPS_TX RX // default
+#define BUTTON_PIN GPIO_NUM_1
+
 // === DISPLAY ===
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -19,13 +43,12 @@
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // === GPS ===
-#define GPS_RX 16
-#define GPS_TX 17
+
 HardwareSerial gpsSerial(2);
 TinyGPSPlus gps;
 
 // === Logging SD Card ===
-#define SD_CS 5
+
 fs::File csvFile;
 fs::File gpxFile;
 bool gpxHeaderWritten = false;
@@ -53,7 +76,7 @@ String wifiPass = "12345678";           // Default password
 bool wifiStarted = false;
 
 // === Sleep & Modes ===
-#define BUTTON_PIN GPIO_NUM_0
+
 RTC_DATA_ATTR int bootCount = 0;
 enum Mode {INFO_MODE, LIVE_MODE, LOG_MODE, NAV_MODE, WIFI_MODE};
 uint32_t buttonPressTime = 0;
@@ -848,6 +871,7 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
+  Wire.begin(SDA, SCL);
   //Increment boot number and print it every reboot
   ++bootCount;
   Serial.println("Boot number: " + String(bootCount));

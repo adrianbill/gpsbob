@@ -24,9 +24,6 @@ GPIO 8 (SDA)
 
  */
 
-// static const uint8_t SDA = 8;
-// static const uint8_t SCL = 9;
-
 #define SDA 8
 #define SCL 9
 

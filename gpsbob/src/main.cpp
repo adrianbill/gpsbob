@@ -9,10 +9,12 @@
 #include <TinyGPSPlus.h>
 #include "driver/rtc_io.h"
 
+// #include <U8g2lib.h>
+
 // #include "esp_sleep.h"
 
 /* 
-SPI  2							
+SPI  2
 GPIO 13 MISO
 GPIO 12 CLK
 GPIO 11 MOSI
@@ -21,16 +23,20 @@ GPIO 10 CS
 I2C
 GPIO 9 (SCL)
 GPIO 8 (SDA) 
+*/
 
- */
+// #define SDA D4
+// #define SCL D5
 
-#define SDA 8
-#define SCL 9
+#define SD_CS D2 // 10
 
-#define SD_CS 10 // 10
-#define GPS_RX TX// default
-#define GPS_TX RX // default
-#define BUTTON_PIN GPIO_NUM_1
+
+#define GPS_RX D7 // default
+#define GPS_TX D6 // default
+
+// const int BUTTON_PIN = 1;  
+#define BUTTON_PIN GPIO_NUM_2
+#define BATTERY_PIN GPIO_NUM_0 // ADC
 
 // === DISPLAY ===
 #define SCREEN_WIDTH 128
@@ -41,7 +47,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // === GPS ===
 
-HardwareSerial gpsSerial(2);
+HardwareSerial gpsSerial(0);
 TinyGPSPlus gps;
 
 // === Logging SD Card ===
@@ -63,6 +69,7 @@ double lastLat = 0.0;
 double lastLng = 0.0;
 unsigned long lastLogTime = 0;
 unsigned long lastLiveTime = 0;
+unsigned long lastbatTime = 0;
 double WaypointLat = 0.0;
 double WaypointLng = 0.0;
 
@@ -84,18 +91,80 @@ bool buttonWasPressed = false;
 Mode currentMode = INFO_MODE;           //Default Start_Mode
 bool update_display = true;
 bool first_load = true;
+int bat_ind = 0;
 // String Mode_Name = "Live Mode";         
 
 // === Utilities ===
+float battery_voltage() {
+  uint32_t Vbatt = 0;
+  for(int i = 0; i < 16; i++) Vbatt = Vbatt + analogReadMilliVolts(BATTERY_PIN); // ADC with correction   
+  return 2 * Vbatt / 16 / 1000.0;     // attenuation ratio 1/2, mV --> V
+}
+
+void battery_percentage(float v) {
+ 	if (v >= 4.2) bat_ind = 100;
+  else if (v > 4.15) bat_ind = 95;
+  else if (v > 4.11) bat_ind = 90;
+	else if (v > 4.08) bat_ind = 85;
+	else if (v > 4.02) bat_ind = 80;
+	else if (v > 3.98) bat_ind = 75;
+	else if (v > 3.95) bat_ind = 70;
+	else if (v > 3.91) bat_ind = 65;
+	else if (v > 3.87) bat_ind = 60;
+	else if (v > 3.85) bat_ind = 55;
+	else if (v > 3.84) bat_ind = 50;
+	else if (v > 3.82) bat_ind = 45;
+	else if (v > 3.80) bat_ind = 40;
+	else if (v > 3.79) bat_ind = 35;
+	else if (v > 3.77) bat_ind = 30;
+	else if (v > 3.75) bat_ind = 25;
+	else if (v > 3.73) bat_ind = 20;
+	else if (v > 3.71) bat_ind = 15;
+	else if (v > 3.69) bat_ind = 10;
+	else if (v > 3.61) bat_ind = 5;
+	else if (v < 3.50) bat_ind = 0;
+}
+
+void battery_update() {
+	battery_percentage(battery_voltage());
+}
+
+// void battery_display() {
+// 	int x = display.getCursorX();
+// 	int y = display.getCursorY();
+// 	display.setTextSize(1);
+// 	display.setCursor(display.width() - (6 * 6), 0);
+// 	display.print(bat_ind);
+// 	display.display();
+// 	display.setCursor(x, y);
+// }
+
+void battery_display(){
+
+	int cell_width = 18;
+	int cell_height = 7;
+	int cell_xstart = display.width() - cell_width;
+	int fill_gap = 2;
+	if (bat_ind == 100) fill_gap = 0;
+	int max_fill_width = cell_width - (2 * fill_gap);
+	int fill_width = (max_fill_width * bat_ind) / 100;
+	int fill_start = (cell_xstart + fill_gap) + (max_fill_width - fill_width);
+
+	display.fillRect(cell_xstart - 2, 2, 2, 3, WHITE);
+	display.drawRect(cell_xstart, 0, cell_width, cell_height, WHITE);
+	display.fillRect(fill_start, fill_gap, fill_width, cell_height - (2 * fill_gap), WHITE);
+	display.display();
+}
+
 void loadConfig() {
   if (!SD.exists("/config.txt")) {
-    Serial.println("No config.txt found, using defaults");
+    // Serial.println("No config.txt found, using defaults");
     return;
   }
 
   fs::File config = SD.open("/config.txt", FILE_READ);
   if (!config) {
-    Serial.println("Failed to open config.txt");
+    // Serial.println("Failed to open config.txt");
     return;
   }
 
@@ -106,55 +175,55 @@ void loadConfig() {
     if (line.startsWith("timezone=")) {
       String val = line.substring(9);
       timezoneOffsetHours = val.toInt();
-      Serial.print("Loaded timezone offset: ");
-      Serial.println(timezoneOffsetHours);
+      // Serial.print("Loaded timezone offset: ");
+      // Serial.println(timezoneOffsetHours);
     }
     else if (line.startsWith("ssid=")) {
       wifiSSID = line.substring(5);
       wifiSSID.trim();
-      Serial.print("Loaded SSID: ");
-      Serial.println(wifiSSID);
+      // Serial.print("Loaded SSID: ");
+      // Serial.println(wifiSSID);
     }
     else if (line.startsWith("password=")) {
       wifiPass = line.substring(9);
       wifiPass.trim();
       if (wifiPass.length() < 8) {
-        Serial.println("Password too short, using default");
+        // Serial.println("Password too short, using default");
         wifiPass = "12345678";
       } else {
-        Serial.print("Loaded password: ");
-        Serial.println(wifiPass);
+        // Serial.print("Loaded password: ");
+        // Serial.println(wifiPass);
       }
     } 
     else if (line.startsWith("log_interval=")) {
       String val = line.substring(13);
       int interval = val.toInt() * 1000;
       if (interval >= 1000) LOG_INTERVAL = interval;
-      Serial.print("Loaded log interval: ");
-      Serial.print(LOG_INTERVAL / 1000);
-      Serial.println(" seconds");
+      // Serial.print("Loaded log interval: ");
+      // Serial.print(LOG_INTERVAL / 1000);
+      // Serial.println(" seconds");
     }
     else if (line.startsWith("live_interval=")) {
       String val = line.substring(14);
       int interval = val.toInt() * 1000;
       if (interval >= 1000) LIVE_INTERVAL = interval;
-      Serial.print("Loaded live interval: ");
-      Serial.print(LIVE_INTERVAL / 1000);
-      Serial.println(" seconds");
+      // Serial.print("Loaded live interval: ");
+      // Serial.print(LIVE_INTERVAL / 1000);
+      // Serial.println(" seconds");
     }
     else if (line.startsWith("Latitude=")) {
       String val = line.substring(9);
       double wayLat = val.toDouble() ;
       if (wayLat != 0) WaypointLat = wayLat;
-      Serial.print("Loaded Waypoint Latitude: ");
-      Serial.println(WaypointLat,6);
+      // Serial.print("Loaded Waypoint Latitude: ");
+      // Serial.println(WaypointLat,6);
     }
     else if (line.startsWith("Longitude=")) {
       String val = line.substring(10);
       double wayLng = val.toDouble() ;
       if (wayLng != 0) WaypointLng = wayLng;
-      Serial.print("Loaded Waypoint Longitude: ");
-      Serial.println(WaypointLng,6);
+      // Serial.print("Loaded Waypoint Longitude: ");
+      // Serial.println(WaypointLng,6);
     }
   }
   config.close();
@@ -304,6 +373,7 @@ void displayGPSData(const String &title, const String &timeLocal, double lat, do
   display.setCursor(0, 0);
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
+	battery_display();
   display.println(title);
   display.println(timeLocal);
   display.println("Lat");
@@ -332,6 +402,7 @@ void displayNAVData(const String &title, const String &timeLocal, double GPSlat,
   display.setCursor(0, 0);
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
+	battery_display();
   display.println(title);
   display.println(timeLocal);
 
@@ -343,11 +414,11 @@ void displayNAVData(const String &title, const String &timeLocal, double GPSlat,
     sprintf(buffer, ">10,000 km");
     display.printf("%8.4f, %8.4f",WaypointLat, WaypointLng);
     display.println("");
-    display.setCursor(0, display.getCursorY() + 4);
+    display.setCursor((display.width() - (10 * 12)) / 2, display.getCursorY() + 4);
     display.setTextSize(2);
-    display.print(buffer);
-    
-    display.print("  Nav OFF");
+    display.println(buffer);
+    display.setCursor((display.width() - (7 * 12)) / 2, display.getCursorY() + 4);
+    display.print("Nav OFF");
     display.display();
     return;
   }
@@ -358,8 +429,8 @@ void displayNAVData(const String &title, const String &timeLocal, double GPSlat,
   display.setTextSize(2);
   display.print(buffer);
   
-  // Serial.print("Distance: ");
-  // Serial.println(buffer);
+  // // Serial.print("Distance: ");
+  // // Serial.println(buffer);
 
   display.setTextSize(1);
   display.println("");
@@ -386,15 +457,18 @@ void displayNAVData(const String &title, const String &timeLocal, double GPSlat,
   display.print(")");
   display.display();
 
-  // Serial.print("Bearing: ");
-  // Serial.print(buffer);
-  // Serial.print("° (");
-  // Serial.print(cardinal);
-  // Serial.println(")");
+  // // Serial.print("Bearing: ");
+  // // Serial.print(buffer);
+  // // Serial.print("° (");
+  // // Serial.print(cardinal);
+  // // Serial.println(")");
   }
 
 void displayInfo() {
-  displayText("Info Mode\n", 1, 1);
+  displayText("Info Mode      ", 1, 1);
+	display.print("Bat: ");
+	display.print(battery_voltage(), 2);
+	display.println(" V");
 
   display.print("Timezone offset: ");
   display.println(timezoneOffsetHours);
@@ -414,7 +488,7 @@ void displayInfo() {
   display.println(buffer);
   sprintf(buffer, " Lon: %11.6f", WaypointLng);
   display.print(buffer);
-
+	battery_display();
   display.display();
 }
 // === Logging ===
@@ -479,7 +553,7 @@ void logData(const String &isoTimeLocal, const String &isoTimeUTC, int display_t
     gpxFile.flush();
   }
 
-  Serial.println(csv);
+  // Serial.println(csv);
 }
 
 void closeGPX() {
@@ -496,8 +570,8 @@ void startWiFiServer() {
 
   WiFi.softAP(wifiSSID.c_str(), wifiPass.c_str());
   IPAddress IP = WiFi.softAPIP();
-  Serial.print("AP IP address: ");
-  Serial.println(IP);
+  // Serial.print("AP IP address: ");
+  // Serial.println(IP);
 
   // Root route
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -628,9 +702,9 @@ void startWiFiServer() {
     String WayLat  = request->getParam("WayLat", true)->value();
     String WayLng  = request->getParam("WayLng", true)->value();
 
-    Serial.println("Writing new waypoint:");
-    Serial.println("LAT: " + WayLat);
-    Serial.println("LNG: " + WayLng);
+    // Serial.println("Writing new waypoint:");
+    // Serial.println("LAT: " + WayLat);
+    // Serial.println("LNG: " + WayLng);
 
     replaceConfigLine("/config.txt", "Latitude", WayLat.c_str());
     replaceConfigLine("/config.txt", "Longitude", WayLng.c_str());
@@ -737,14 +811,14 @@ void startWiFiServer() {
     String WayLat  = request->getParam("WayLat", true)->value();
     String WayLng  = request->getParam("WayLng", true)->value();
 
-    Serial.println("Writing new config:");
-    Serial.println("SSID: " + ssid);
-    Serial.println("PASS: " + pass);
-    Serial.println("TZ: " + tz);
-    Serial.println("LOG: " + log);
-    Serial.println("LIVE: " + live);
-    Serial.println("LAT: " + WayLat);
-    Serial.println("LNG: " + WayLng);
+    // Serial.println("Writing new config:");
+    // Serial.println("SSID: " + ssid);
+    // Serial.println("PASS: " + pass);
+    // Serial.println("TZ: " + tz);
+    // Serial.println("LOG: " + log);
+    // Serial.println("LIVE: " + live);
+    // Serial.println("LAT: " + WayLat);
+    // Serial.println("LNG: " + WayLng);
 
     SD.remove("/config.txt");
     File f = SD.open("/config.txt", FILE_WRITE);
@@ -809,7 +883,7 @@ void handleButton() {
     if (pressDuration > LONG_PRESS_MS) {
       // Long press → toggle sleep
       sleepEnabled = !sleepEnabled;
-      Serial.println(sleepEnabled ? "Entering Deep Sleep" : "Waking up");
+      // Serial.println(sleepEnabled ? "Entering Deep Sleep" : "Waking up");
       if (sleepEnabled) {
         displayText("Sleep Mode\nEntering Sleep...\nPress Button to Wake up",1,1);
         gpsSerial.end();
@@ -824,38 +898,41 @@ void handleButton() {
       switch (currentMode) {
         case INFO_MODE:
           stopWiFiServer();
-          
+					battery_update();
           loadConfig();
-
           displayInfo();
-
-          Serial.println("Switch to INFO");
+          // Serial.println("Switch to INFO");
           break;
 
         case LIVE_MODE:       
           stopWiFiServer();
-          Serial.println("Switch to LIVE");
+					battery_update();
+          // Serial.println("Switch to LIVE");
           first_load = true;
           break;
 
         case LOG_MODE:
           stopWiFiServer();
-          Serial.println("Switch to LOG");
+					battery_update();
+          // Serial.println("Switch to LOG");
           first_load = true;
           break;
 
         case NAV_MODE:       
           stopWiFiServer();
-          Serial.println("Switch to NAV");
+					battery_update();
+          // Serial.println("Switch to NAV");
           first_load = true;
           break;
         
         case WIFI_MODE:
+					battery_update();
           displayText("WIFI MODE",1,1);
+					battery_display();
           // gpsSerial.end();
           startWiFiServer();
           displayText("\nWIFI Enabled",1,0);
-          Serial.println("Switch to WIFI");
+          // Serial.println("Switch to WIFI");
           break;
       }
       update_display = true;
@@ -865,13 +942,13 @@ void handleButton() {
 
 // === Setup ===
 void setup() {
-  Serial.begin(115200);
-  delay(1000);
+  // Serial.begin(115200);
+  // delay(1000);
 
-  Wire.begin(SDA, SCL);
+  // Wire.begin(SDA, SCL);
   //Increment boot number and print it every reboot
   ++bootCount;
-  Serial.println("Boot number: " + String(bootCount));
+  // Serial.println("Boot number: " + String(bootCount));
 
   if (bootCount == 1) display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
   else display.ssd1306_command(SSD1306_DISPLAYON);
@@ -891,6 +968,8 @@ void setup() {
   loadConfig();
 
   currentMode = INFO_MODE;
+
+	battery_update();
 
   displayInfo();
 
@@ -912,13 +991,13 @@ void loop() {
       update_display = false;
       switch (currentMode) {
         case LIVE_MODE:    
-          displayGPSData("Live Mode - Last Log", lastTimestamp, lastLat, lastLng);
+          displayGPSData("Live Mode - Last", lastTimestamp, lastLat, lastLng);
           return;
         case LOG_MODE:
-          displayGPSData("Log Mode - Last Log", lastTimestamp, lastLat, lastLng);
+          displayGPSData("Log Mode - Last", lastTimestamp, lastLat, lastLng);
           return;
         case NAV_MODE:
-          displayNAVData("NAV Mode - Last Log", lastTimestamp, lastLat, lastLng, WaypointLat, WaypointLng);
+          displayNAVData("NAV Mode - Last", lastTimestamp, lastLat, lastLng, WaypointLat, WaypointLng);
           return;
         default:
           return;
@@ -956,10 +1035,15 @@ void loop() {
     openLogFiles(today);
   }
 
+	if ((millis() - lastbatTime >= 60000) || first_load) {
+		battery_update();
+		lastbatTime = millis();
+	}
+
   switch (currentMode) {
     case LIVE_MODE:
       if ((millis() - lastLiveTime >= LIVE_INTERVAL) || first_load) {
-        displayGPSData("Live Mode - Int " + String(LIVE_INTERVAL / 1000) + " s", isoTimeLocal, lat, lng);
+        displayGPSData("Live Mode " + String(LIVE_INTERVAL / 1000) + " s ", isoTimeLocal, lat, lng);
         // logData(isoTimeLocal, isoTimeUTC, 1);
         lastTimestamp = isoTimeLocal;
         lastLat = lat;
@@ -971,8 +1055,8 @@ void loop() {
 
     case LOG_MODE:
       if ((millis() - lastLogTime >= LOG_INTERVAL) || first_load) {
-        Serial.println("Logging");
-        displayGPSData("Log Mode - Int " + String(LOG_INTERVAL / 1000) + " s", isoTimeLocal, lat, lng);
+        // Serial.println("Logging");
+        displayGPSData("Log Mode " + String(LOG_INTERVAL / 1000) + " s ", isoTimeLocal, lat, lng);
         logData(isoTimeLocal, isoTimeUTC, 1);
         lastTimestamp = isoTimeLocal;
         lastLat = lat;
@@ -984,7 +1068,7 @@ void loop() {
 
     case NAV_MODE: 
        if ((millis() - lastLiveTime >= LIVE_INTERVAL) || first_load) {
-        displayNAVData("NAV Mode - Live", lastTimestamp, lat, lng, WaypointLat, WaypointLng);
+        displayNAVData("NAV Mode", lastTimestamp, lat, lng, WaypointLat, WaypointLng);
         lastTimestamp = isoTimeLocal;
         lastLat = lat;
         lastLng = lng;

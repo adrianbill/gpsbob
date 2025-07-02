@@ -36,7 +36,7 @@ GPIO 8 (SDA)
 
 // const int BUTTON_PIN = 1;  
 #define BUTTON_PIN GPIO_NUM_2
-#define BATTERY_PIN GPIO_NUM_0 // ADC
+#define BATTERY_PIN GPIO_NUM_1 // ADC
 
 // === DISPLAY ===
 #define SCREEN_WIDTH 128
@@ -63,6 +63,7 @@ int LIVE_INTERVAL = 5000;               // default 5 seconds
 // === State ===
 String currentDateStr = "";
 String lastTimestamp = "Waiting for GPS";
+String lastDisplay = "";
 // double lastLat = 48.424970;
 // double lastLng = -123.373445;
 double lastLat = 0.0;
@@ -72,6 +73,9 @@ unsigned long lastLiveTime = 0;
 unsigned long lastbatTime = 0;
 double WaypointLat = 0.0;
 double WaypointLng = 0.0;
+uint32_t startGetFixmS;
+uint32_t endFixmS;
+uint32_t FixTimemS;
 
 // === Wi-Fi ===
 AsyncWebServer server(80);
@@ -93,6 +97,8 @@ bool update_display = true;
 bool first_load = true;
 int bat_ind = 0;
 // String Mode_Name = "Live Mode";         
+
+bool coord_updated( double lat, double lng);
 
 // === Utilities ===
 float battery_voltage() {
@@ -356,6 +362,8 @@ String gpsDateStamp(TinyGPSDate date) {
 
 // === display tool (maybe reo) ===
 
+
+
 void displayText(const String &text, int size, int clear) {
   if (clear == 1) 
   {
@@ -369,6 +377,18 @@ void displayText(const String &text, int size, int clear) {
 }
 
 void displayGPSData(const String &title, const String &timeLocal, double lat, double lng) {
+
+  // char buffer[22];
+  // sprintf(buffer, "%9.5f, %9.5f", lat, lng);
+
+  // String newCoord = buffer;
+  
+  // if (newCoord == lastDisplay) return;
+
+  // lastDisplay = buffer;
+
+  if (coord_updated(lat, lng)) return;
+  
   display.clearDisplay();
   display.setCursor(0, 0);
   display.setTextSize(1);
@@ -394,6 +414,8 @@ void displayGPSData(const String &title, const String &timeLocal, double lat, do
 
 void displayNAVData(const String &title, const String &timeLocal, double GPSlat, double GPSlng, double WAYlat, double WAYlng) {
   
+  if (coord_updated(GPSlat, GPSlng)) return;
+    
   double distance = TinyGPSPlus::distanceBetween(lastLat, lastLng, WaypointLat, WaypointLng);
   double courseToWaypoint = TinyGPSPlus::courseTo(lastLat, lastLng, WaypointLat, WaypointLng);
   const char *cardinal = TinyGPSPlus::cardinal(courseToWaypoint);
@@ -940,6 +962,58 @@ void handleButton() {
   }
 }
 
+bool coord_updated( double lat, double lng) {
+
+  handleButton();
+  
+  char buffer[22];
+
+  sprintf(buffer, "%9.5f, %9.5f", lat, lng);
+
+  String newCoord = buffer;
+  
+  if (newCoord == lastDisplay) return true;
+
+  lastDisplay = buffer;
+
+  return false;
+}
+
+bool gpsWaitFix(uint16_t waitmS) {
+  //waits a specified number of millis for a fix, returns true for updated fix
+  uint32_t startmS;
+  uint8_t GPSchar;
+
+  Serial.print(F("Wait GPS Fix "));
+  Serial.print(waitmS);
+  Serial.println(F("mS"));
+
+  startmS = millis();
+
+  while ( (uint32_t) (millis() - startmS) < waitmS)   //allows for millis() overflow
+  {
+  handleButton();
+  if (gpsSerial.available() > 0)
+   {
+    GPSchar = gpsSerial.read();
+    gps.encode(GPSchar);
+    Serial.write(GPSchar);
+   }
+
+   if (gps.speed.isUpdated() && gps.satellites.isUpdated()) //ensures that GGA and RMC sentences have been received
+   {
+    endFixmS = millis();   //record the time when we got a GPS fix
+    Serial.println();
+    Serial.print(F("Fix time "));
+    FixTimemS = endFixmS - startmS;
+    Serial.print(FixTimemS);
+    Serial.println(F("ms"));
+    return true;
+   }
+  }
+  return false;
+}
+
 // === Setup ===
 void setup() {
   // Serial.begin(115200);
@@ -975,18 +1049,17 @@ void setup() {
 
 }
 
+
 // === Main Loop ===
 void loop() {
   handleButton();
 
-  // if (currentMode == WIFI_MODE || currentMode == INFO_MODE) return;
-  if (currentMode == WIFI_MODE) return;
+  if (currentMode == WIFI_MODE || currentMode == INFO_MODE) return;
 
-  while (gpsSerial.available()) gps.encode(gpsSerial.read());
+  startGetFixmS = millis();//record time reading GPS for fix starts
 
-  if (currentMode == INFO_MODE) return;
-
-  if (!gps.location.isValid() || !gps.date.isValid() || !gps.time.isValid()) {
+  if (!gpsWaitFix(5000)) {
+    handleButton();
     if (update_display) { 
       update_display = false;
       switch (currentMode) {
@@ -1004,6 +1077,29 @@ void loop() {
       }
     } else return;
   }
+
+  // while (gpsSerial.available()) gps.encode(gpsSerial.read());
+
+  // if (currentMode == INFO_MODE) return;
+
+  // if (!gps.location.isValid() || !gps.date.isValid() || !gps.time.isValid()) {
+  //   if (update_display) { 
+  //     update_display = false;
+  //     switch (currentMode) {
+  //       case LIVE_MODE:    
+  //         displayGPSData("Live Mode - Last", lastTimestamp, lastLat, lastLng);
+  //         return;
+  //       case LOG_MODE:
+  //         displayGPSData("Log Mode - Last", lastTimestamp, lastLat, lastLng);
+  //         return;
+  //       case NAV_MODE:
+  //         displayNAVData("NAV Mode - Last", lastTimestamp, lastLat, lastLng, WaypointLat, WaypointLng);
+  //         return;
+  //       default:
+  //         return;
+  //     }
+  //   } else return;
+  // }
   
   update_display = true;
 

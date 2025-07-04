@@ -21,81 +21,80 @@
 
 
 // === PINS ===
-	// SDA D4 For reference, definition not needed
-	// SCL D5 For reference, definition not needed
-  #define SD_CS D2 /* SD Card Chip Select */
-	#define GPS_RX D7
-	#define GPS_TX D6
-	#define BUTTON_PIN GPIO_NUM_2
-	#define BATTERY_PIN 36 /* ADC, GPIO36 (VP) is commonly used for battery voltage sensing */
+// SDA D4 For reference, definition not needed
+// SCL D5 For reference, definition not needed
+#define SD_CS D2 /* SD Card Chip Select */
+#define GPS_RX D7
+#define GPS_TX D6
+#define BUTTON_PIN GPIO_NUM_2
+#define BATTERY_PIN 36 /* ADC, GPIO36 (VP) is commonly used for battery voltage sensing */
 
 // === DISPLAY ===
-	#define SCREEN_WIDTH 128
-	#define SCREEN_HEIGHT 64
-	#define SCREEN_ADDRESS 0x3C
-	Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define SCREEN_ADDRESS 0x3C
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 // === Logging SD Card ===
-	fs::File csvFile;
-	fs::File gpxFile;
-	bool gpxHeaderWritten = false;
-	bool csvHeaderWritten = false;
-	int timezoneOffsetHours = 0; /* Default UTC */
-	int LOG_INTERVAL = 30000;    /* default 30 seconds */
-	int LIVE_INTERVAL = 5000;    /* default 5 seconds */
+fs::File csv_file;
+fs::File gpx_file;
+bool gpx_header_written = false;
+bool csv_header_written = false;
+int timezone_offset_hours = 0; /* Default UTC */
+int log_interval = 30000;    /* default 30 seconds */
+int live_interval = 5000;    /* default 5 seconds */
 
 // === GPS ===
-
-	HardwareSerial gpsSerial(0);
-	TinyGPSPlus gps;
+HardwareSerial gpsSerial(0);
+TinyGPSPlus gps;
 
 // ====== GPS INFO =====
-	double WaypointLat = 0.0;
-	double WaypointLng = 0.0;
-	int FixState = 0;
-	int FixStart = 0;
-	int FixTime = 0;
+double waypoint_lat = 0.0;
+double waypoint_lng = 0.0;
+int fix_state = 0;
+int fix_start = 0;
+int fix_Time = 0;
 
 // ====== LAST GPS INFO =====
-	String currentDateStr = "";
-	String lastTimestamp = "Waiting for GPS";
-  String today = "";
-  String lastUTC = "";
-	long lastDisplay = 0;
-	double lastLat = 0.0;
-	double lastLng = 0.0;
-	unsigned long lastLogTime = 0;
-	unsigned long lastLiveTime = 0;
-	unsigned long lastbatTime = 0;
-	int lastFixTime = 0;
-  int lastSats = 0;
-	double lastHdop = 0.0;
+String current_date_str = "";
+String last_timestamp = "Waiting for GPS";
+String today = "";
+String last_utc = "";
+long last_display = 0;
+double last_lat = 0.0;
+double last_lng = 0.0;
+unsigned long last_log_time = 0;
+unsigned long last_live_time = 0;
+unsigned long last_bat_time = 0;
+int last_fix_time = 0;
+int last_sats = 0;
+double last_hdop = 0.0;
 
 
 // === Wi-Fi ===
-	AsyncWebServer server(80);
-	String wifiSSID = "GPS_BOB"; /* Default SSID */
-	String wifiPass = "12345678"; /* Default password */
-	bool wifiStarted = false;
+AsyncWebServer server(80);
+String wifi_ssid = "GPS_BOB"; /* Default SSID */
+String wifi_pass = "12345678"; /* Default password */
+bool wifi_started = false;
 
 // === Sleep & Modes ===
-	RTC_DATA_ATTR int bootCount = 0;
-	enum Mode {
-		INFO_MODE,
-		LIVE_MODE,
-		LOG_MODE,
-		NAV_MODE,
-		WIFI_MODE
-	};
-	uint32_t buttonPressTime = 0;
-	const uint16_t LONG_PRESS_MS = 3000; /* Long press length, 3 seconds */
-	const uint16_t DEBOUNCE_MS = 50;
-	bool sleepEnabled = false;
-	bool buttonWasPressed = false;
-	Mode currentMode = INFO_MODE; /* Default Start_Mode */
-	bool update_display = true;
-	bool first_load = true;
-	int bat_ind = 0;
+RTC_DATA_ATTR int boot_count = 0;
+enum Mode {
+  INFO_MODE,
+  LIVE_MODE,
+  LOG_MODE,
+  NAV_MODE,
+  WIFI_MODE
+};
+uint32_t button_press_time = 0;
+const uint16_t long_press_ms = 3000; /* Long press length, 3 seconds */
+const uint16_t debounce_ms = 50;
+bool sleep_enabled = false;
+bool button_was_pressed = false;
+Mode current_mode = INFO_MODE; /* Default Start_Mode */
+bool update_display = true;
+bool first_load = true;
+int bat_ind = 0;
 
 // === Battery ===
 float battery_voltage(void);
@@ -104,39 +103,39 @@ void battery_update(void);
 void battery_display(void);
 
 // === Config File ===
-void loadConfig(void);
-bool replaceConfigLine(const char *filename, const String &key, const String &newValue);
+void load_config(void);
+bool replace_config_line(const char *filename, const String &key, const String &newValue);
 
 // === Date & Time conversion ===
-String toISO8601(TinyGPSDate date, TinyGPSTime time);
-String toISO8601Local(TinyGPSDate date, TinyGPSTime time, int offsetHours);
-String gpsDateStamp(TinyGPSDate date);
+String to_iso8601(TinyGPSDate date, TinyGPSTime time);
+String to_iso8601_local(TinyGPSDate date, TinyGPSTime time, int offsetHours);
+String gps_date_stamp(TinyGPSDate date);
 
 // === display tool (maybe reo) ===
-void displayText(const String &text, int size, bool clear = false, bool excute = false);
-void displayGPSData(const String &title);
-void displayNAVData(const String &title);
-void displayInfo(void);
+void display_text(const String &text, int size, bool clear = false, bool excute = false);
+void display_gps_data(const String &title);
+void display_nav_data(const String &title);
+void display_info(void);
 
 // === GPS Checking ===
-void updateGPSData(void);
-void gpsFixTimeTest(void); /* for testing only, not used in final product */
-int gpsFixCheck(void);
+void update_gps_data(void);
+void gps_fix_test(void); /* for testing only, not used in final product */
+int gps_fix_check(void);
 
 // === Logging ===
-void openLogFiles(const String &dateStr);
-void logData(void);
-void closeGPX(void);
-void startWiFiServer(void);
-void stopWiFiServer(void);
+void open_log_files(const String &dateStr);
+void log_data(void);
+void close_gpx(void);
+void start_wifi_server(void);
+void stop_wifi_server(void);
 
 // === Button Handling ===
-void handleButton(void);
+void handle_button(void);
 
 // === Setup ===
 void setup(void)
 {
-	++bootCount;
+	++boot_count;
 
 	esp_sleep_enable_ext0_wakeup(BUTTON_PIN, 0); /* 1 = High, 0 = Low */
 	pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -144,75 +143,75 @@ void setup(void)
 	display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
 	display.setTextColor(SSD1306_WHITE);
 	while (!SD.begin(SD_CS))
-		displayText("Error\nSD Error\nCheck if installed and Reset", 1, true, true);
-	loadConfig();
-	currentMode = INFO_MODE;
+		display_text("Error\nSD Error\nCheck if installed and Reset", 1, true, true);
+	load_config();
+	current_mode = INFO_MODE;
 	battery_update();
-	displayInfo();
+	display_info();
 }
 
 // === Main Loop ===
 void loop(void)
 {
 
-	handleButton();
+	handle_button();
 
-	if (currentMode == WIFI_MODE || currentMode == INFO_MODE)
+	if (current_mode == WIFI_MODE || current_mode == INFO_MODE)
 		return;
 
-	if (gpsFixCheck() == 0) {
-		FixStart = millis();
-		switch (currentMode) {
+	if (gps_fix_check() == 0) {
+		fix_start = millis();
+		switch (current_mode) {
 		case LIVE_MODE:
-			displayGPSData("Live Mode - Last");
+			display_gps_data("Live Mode - Last");
 			break;
 		case LOG_MODE:
-			displayGPSData("Log Mode - Last");
+			display_gps_data("Log Mode - Last");
 			break;
 		case NAV_MODE:
-			displayNAVData("NAV Mode - Last");
+			display_nav_data("NAV Mode - Last");
 			break;
 		}
     update_display = false;
     return;
-	} else if (gpsFixCheck() == 3) return;
+	} else if (gps_fix_check() == 3) return;
 
-	FixTime = millis() - FixStart;
+	fix_Time = millis() - fix_start;
 
 	// update battery if needed
-	if ((millis() - lastbatTime >= 300000) || first_load) {
+	if ((millis() - last_bat_time >= 300000) || first_load) {
 		battery_update();
-		lastbatTime = millis();
+		last_bat_time = millis();
 	}
 
-	switch (currentMode) {
+	switch (current_mode) {
 	case LIVE_MODE:
-		if ((millis() - lastLiveTime >= LIVE_INTERVAL) || first_load) {
+		if ((millis() - last_live_time >= live_interval) || first_load) {
       update_display = true;
-			updateGPSData();
-			displayGPSData("Live Mode " + String(LIVE_INTERVAL / 1000) + " s ");
-			lastLiveTime = millis();
+			update_gps_data();
+			display_gps_data("Live Mode " + String(live_interval / 1000) + " s ");
+			last_live_time = millis();
 			first_load = false;
 		}
 		break;
 
 	case LOG_MODE:
-		if ((millis() - lastLogTime >= LOG_INTERVAL) || first_load) {
+		if ((millis() - last_log_time >= log_interval) || first_load) {
       update_display = true;
-			updateGPSData();
-			displayGPSData("Log Mode " + String(LOG_INTERVAL / 1000) + " s ");
-			logData();
-			lastLogTime = millis();
+			update_gps_data();
+			display_gps_data("Log Mode " + String(log_interval / 1000) + " s ");
+			log_data();
+			last_log_time = millis();
 			first_load = false;
 		}
 		break;
 
 	case NAV_MODE:
-		if ((millis() - lastLiveTime >= 1000) || first_load) {
+		if ((millis() - last_live_time >= 1000) || first_load) {
       update_display = true;
-			updateGPSData();
-			displayNAVData("NAV Mode");
-			lastLiveTime = millis();
+			update_gps_data();
+			display_nav_data("NAV Mode");
+			last_live_time = millis();
 			first_load = false;
 		}
 		break;
@@ -301,7 +300,8 @@ void battery_display(void)
 		display.drawLine(cell_xstart, 0, cell_xstart + cell_width, cell_height - 1, WHITE);
 }
 
-void loadConfig(void) {
+void load_config(void) 
+{
 	if (!SD.exists("/config.txt")) {
 		// Serial.println("No config.txt found, using defaults");
 		return;
@@ -319,62 +319,63 @@ void loadConfig(void) {
 
 		if (line.startsWith("timezone=")) {
 			String val = line.substring(9);
-			timezoneOffsetHours = val.toInt();
+			timezone_offset_hours = val.toInt();
 			// Serial.print("Loaded timezone offset: ");
-			// Serial.println(timezoneOffsetHours);
+			// Serial.println(timezone_offset_hours);
 		}
 		else if (line.startsWith("ssid=")) {
-			wifiSSID = line.substring(5);
-			wifiSSID.trim();
+			wifi_ssid = line.substring(5);
+			wifi_ssid.trim();
 			// Serial.print("Loaded SSID: ");
-			// Serial.println(wifiSSID);
+			// Serial.println(wifi_ssid);
 		}
 		else if (line.startsWith("password=")) {
-			wifiPass = line.substring(9);
-			wifiPass.trim();
-			if (wifiPass.length() < 8) {
+			wifi_pass = line.substring(9);
+			wifi_pass.trim();
+			if (wifi_pass.length() < 8) {
 				// Serial.println("Password too short, using default");
-				wifiPass = "12345678";
+				wifi_pass = "12345678";
 			} else {
 				// Serial.print("Loaded password: ");
-				// Serial.println(wifiPass);
+				// Serial.println(wifi_pass);
 			}
 		} 
 		else if (line.startsWith("log_interval=")) {
 			String val = line.substring(13);
 			int interval = val.toFloat() * 1000;
-			if (interval >= 1000) LOG_INTERVAL = interval;
+			if (interval >= 1000) log_interval = interval;
 			// Serial.print("Loaded log interval: ");
-			// Serial.print(LOG_INTERVAL / 1000);
+			// Serial.print(log_interval / 1000);
 			// Serial.println(" seconds");
 		}
 		else if (line.startsWith("live_interval=")) {
 			String val = line.substring(14);
 			int interval = val.toFloat() * 1000;
-			if (interval >= 1000) LIVE_INTERVAL = interval;
+			if (interval >= 1000) live_interval = interval;
 			// Serial.print("Loaded live interval: ");
-			// Serial.print(LIVE_INTERVAL / 1000);
+			// Serial.print(live_interval / 1000);
 			// Serial.println(" seconds");
 		}
 		else if (line.startsWith("Latitude=")) {
 			String val = line.substring(9);
 			double wayLat = val.toDouble() ;
-			if (wayLat != 0) WaypointLat = wayLat;
+			if (wayLat != 0) waypoint_lat = wayLat;
 			// Serial.print("Loaded Waypoint Latitude: ");
-			// Serial.println(WaypointLat,6);
+			// Serial.println(waypoint_lat,6);
 		}
 		else if (line.startsWith("Longitude=")) {
 			String val = line.substring(10);
 			double wayLng = val.toDouble() ;
-			if (wayLng != 0) WaypointLng = wayLng;
+			if (wayLng != 0) waypoint_lng = wayLng;
 			// Serial.print("Loaded Waypoint Longitude: ");
-			// Serial.println(WaypointLng,6);
+			// Serial.println(waypoint_lng,6);
 		}
 	}
 	config.close();
 }
 
-bool replaceConfigLine(const char* filename, const String& key, const String& newValue) {
+bool replace_config_line(const char* filename, const String& key, const String& newValue) 
+{
 	File original = SD.open(filename, FILE_READ);
 	if (!original) return false;
 
@@ -403,7 +404,8 @@ bool replaceConfigLine(const char* filename, const String& key, const String& ne
 }
 
 // === Date & Time conversion ===
-String toISO8601(TinyGPSDate date, TinyGPSTime time) {
+String to_iso8601(TinyGPSDate date, TinyGPSTime time) 
+{
 	char buf[25];
 	snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02dZ",
 			 date.year(), date.month(), date.day(),
@@ -411,7 +413,8 @@ String toISO8601(TinyGPSDate date, TinyGPSTime time) {
 	return String(buf);
 }
 
-String toISO8601Local(TinyGPSDate date, TinyGPSTime time, int offsetHours) {
+String to_iso8601_local(TinyGPSDate date, TinyGPSTime time, int offsetHours) 
+{
 	int year = date.year();
 	int month = date.month();
 	int day = date.day();
@@ -493,7 +496,8 @@ String toISO8601Local(TinyGPSDate date, TinyGPSTime time, int offsetHours) {
 	return String(buf);
 }
 
-String gpsDateStamp(TinyGPSDate date) {
+String gps_date_stamp(TinyGPSDate date) 
+{
 	char buf[9];
 	snprintf(buf, sizeof(buf), "%04d%02d%02d", date.year(), date.month(), date.day());
 	return String(buf);
@@ -501,7 +505,8 @@ String gpsDateStamp(TinyGPSDate date) {
 
 // === display tool (maybe reo) ===
 
-void displayText(const String &text, int size, bool clear, bool excute) {
+void display_text(const String &text, int size, bool clear, bool excute) 
+{
 	if (clear) 
 	{
 		display.clearDisplay();
@@ -513,20 +518,20 @@ void displayText(const String &text, int size, bool clear, bool excute) {
 	if (excute) display.display();
 }
 
-void updateGPSData(void)
+void update_gps_data(void)
 {
   TinyGPSDate date = gps.date;
 	TinyGPSTime time = gps.time;
-  today = gpsDateStamp(date);
-  lastUTC = toISO8601(date, time);
-	lastTimestamp = toISO8601Local(date, time, timezoneOffsetHours);
-	lastLat = gps.location.lat();
-	lastLng = gps.location.lng();
-	lastSats = gps.satellites.value();
-	lastHdop = gps.hdop.hdop();
+  today = gps_date_stamp(date);
+  last_utc = to_iso8601(date, time);
+	last_timestamp = to_iso8601_local(date, time, timezone_offset_hours);
+	last_lat = gps.location.lat();
+	last_lng = gps.location.lng();
+	last_sats = gps.satellites.value();
+	last_hdop = gps.hdop.hdop();
 }
 
-void displayGPSData(const String &title)
+void display_gps_data(const String &title)
 {
     if (update_display == false)
         return;
@@ -536,30 +541,30 @@ void displayGPSData(const String &title)
     display.setTextColor(SSD1306_WHITE);
     battery_display();
     display.println(title);
-    display.println(lastTimestamp);
+    display.println(last_timestamp);
     display.println("Lat");
     display.setTextSize(2);
     display.setCursor(2, display.getCursorY());
-    if (lastLat >= 0 && lastLat < 100) display.print("  ");
-    if (lastLat < 0 && lastLat > -100) display.print(" ");
-    display.println(lastLat, 5);
+    if (last_lat >= 0 && last_lat < 100) display.print("  ");
+    if (last_lat < 0 && last_lat > -100) display.print(" ");
+    display.println(last_lat, 5);
     display.setTextSize(1);
     display.println("Lon");
     display.setTextSize(2);
     display.setCursor(2, display.getCursorY());
-    if (lastLng >= 0 && lastLng < 100) display.print("  ");
-    if (lastLng < 0 && lastLng > -100) display.print(" ");
-    display.println(lastLng, 5);
+    if (last_lng >= 0 && last_lng < 100) display.print("  ");
+    if (last_lng < 0 && last_lng > -100) display.print(" ");
+    display.println(last_lng, 5);
     display.display();
     update_display = false;
 }
 
-void displayNAVData(const String &title)
+void display_nav_data(const String &title)
 {
     if (update_display == false)
         return;
-    double distance = TinyGPSPlus::distanceBetween(lastLat, lastLng, WaypointLat, WaypointLng);
-    double course_to_waypoint = TinyGPSPlus::courseTo(lastLat, lastLng, WaypointLat, WaypointLng);
+    double distance = TinyGPSPlus::distanceBetween(last_lat, last_lng, waypoint_lat, waypoint_lng);
+    double course_to_waypoint = TinyGPSPlus::courseTo(last_lat, last_lng, waypoint_lat, waypoint_lng);
     const char *cardinal = TinyGPSPlus::cardinal(course_to_waypoint);
     display.clearDisplay();
     display.setCursor(0, 0);
@@ -567,7 +572,7 @@ void displayNAVData(const String &title)
     display.setTextColor(SSD1306_WHITE);
     battery_display();
     display.println(title);
-    display.println(lastTimestamp);
+    display.println(last_timestamp);
     char buffer[16];
     if (distance < 1000)
         sprintf(buffer, "%5.f m", distance);
@@ -575,7 +580,7 @@ void displayNAVData(const String &title)
         sprintf(buffer, " %6.1f km", distance / 1000.0);
     else {
         sprintf(buffer, ">10,000 km");
-        display.printf("%8.4f, %8.4f", WaypointLat, WaypointLng);
+        display.printf("%8.4f, %8.4f", waypoint_lat, waypoint_lng);
         display.println("");
         display.setCursor((display.width() - (10 * 12)) / 2, display.getCursorY() + 4);
         display.setTextSize(2);
@@ -585,7 +590,7 @@ void displayNAVData(const String &title)
         display.display();
         return;
     }
-    display.printf("%8.4f, %8.4f", WaypointLat, WaypointLng);
+    display.printf("%8.4f, %8.4f", waypoint_lat, waypoint_lng);
     display.println("");
     display.setCursor(0, display.getCursorY() + 4);
     display.setTextSize(2);
@@ -614,111 +619,116 @@ void displayNAVData(const String &title)
     update_display = false;
 }
 
-void displayInfo() {
-	displayText("Info Mode      ", 1, true);
+void display_info() 
+{
+	display_text("Info Mode      ", 1, true);
 	display.print("Bat: ");
 	display.print(battery_voltage(), 2);
 	display.println(" V");
 
 	display.print("Timezone offset: ");
-	display.println(timezoneOffsetHours);
+	display.println(timezone_offset_hours);
 
 	display.print("Log interval: ");
-	display.print(LOG_INTERVAL / 1000);
+	display.print(log_interval / 1000);
 	display.println(" s");
 
 	display.print("Live interval: ");
-	display.print(LIVE_INTERVAL / 1000);
+	display.print(live_interval / 1000);
 	display.println(" s");
 
 	char buffer [20];
 
 	display.println("Waypoint");
-	sprintf(buffer, " Lat: %11.6f", WaypointLat);
+	sprintf(buffer, " Lat: %11.6f", waypoint_lat);
 	display.println(buffer);
-	sprintf(buffer, " Lon: %11.6f", WaypointLng);
+	sprintf(buffer, " Lon: %11.6f", waypoint_lng);
 	display.print(buffer);
 	battery_display();
 	display.display();
 }
 // === Logging ===
-void openLogFiles(const String &dateStr) {
+void open_log_files(const String &dateStr) 
+{
 
-	currentDateStr = dateStr;
+	current_date_str = dateStr;
 
-	String csvName = "/log_" + currentDateStr + ".csv";
+	String csvName = "/log_" + current_date_str + ".csv";
 	bool newFile_csv = !SD.exists(csvName);
-	csvFile = SD.open(csvName, FILE_APPEND);
-	csvHeaderWritten = newFile_csv;
+	csv_file = SD.open(csvName, FILE_APPEND);
+	csv_header_written = newFile_csv;
 
-	if (csvFile && csvHeaderWritten) {
-		csvFile.println("Timestamp(Local),Latitude,Longitude,Satilites,HDOP,OffsetUTC");
-		csvFile.flush();
+	if (csv_file && csv_header_written) {
+		csv_file.println("_timestamp(_local),Latitude,Longitude,Satilites,HDOP,OffsetUTC");
+		csv_file.flush();
 	}
 
-	String gpxName = "/track_" + currentDateStr + ".gpx";
+	String gpxName = "/track_" + current_date_str + ".gpx";
 	bool newFile_gpx = !SD.exists(gpxName);
-	gpxFile = SD.open(gpxName, FILE_APPEND);
-	gpxHeaderWritten = newFile_gpx;
+	gpx_file = SD.open(gpxName, FILE_APPEND);
+	gpx_header_written = newFile_gpx;
 
-	if (gpxFile && gpxHeaderWritten) {
-		gpxFile.println("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-		gpxFile.println("<gpx version=\"1.1\" creator=\"ESP32 Logger\"");
-		gpxFile.println(" xmlns=\"http://www.topografix.com/GPX/1/1\"");
-		gpxFile.println(" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
-		gpxFile.println(" xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1");
-		gpxFile.println(" http://www.topografix.com/GPX/1/1/gpx.xsd\">");
-		gpxFile.println("<trk><name>GPSBOB Log</name><trkseg>");
-		gpxFile.flush();
+	if (gpx_file && gpx_header_written) {
+		gpx_file.println("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+		gpx_file.println("<gpx version=\"1.1\" creator=\"ESP32 Logger\"");
+		gpx_file.println(" xmlns=\"http://www.topografix.com/GPX/1/1\"");
+		gpx_file.println(" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
+		gpx_file.println(" xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1");
+		gpx_file.println(" http://www.topografix.com/GPX/1/1/gpx.xsd\">");
+		gpx_file.println("<trk><name>GPSBOB Log</name><trkseg>");
+		gpx_file.flush();
 	}
 }
 
-void logData() {
-	if (today != currentDateStr) {
-		closeGPX();
-		openLogFiles(today);
+void log_data() 
+{
+	if (today != current_date_str) {
+		close_gpx();
+		open_log_files(today);
 	}
 
-	String csv =  lastTimestamp + "," +
-				String(lastLat, 6) + "," +
-				String(lastLng, 6) + "," +
-				String(lastSats) + "," +
-				String(lastHdop, 2) + "," +
-				String(timezoneOffsetHours);
+	String csv =  last_timestamp + "," +
+				String(last_lat, 6) + "," +
+				String(last_lng, 6) + "," +
+				String(last_sats) + "," +
+				String(last_hdop, 2) + "," +
+				String(timezone_offset_hours);
 
-	if (csvFile) {
-		csvFile.println(csv);
-		csvFile.flush();
+	if (csv_file) {
+		csv_file.println(csv);
+		csv_file.flush();
 	}
 
-	if (gpxFile) {
-		gpxFile.print("<trkpt lat=\"");
-		gpxFile.print(lastLat, 6);
-		gpxFile.print("\" lon=\"");
-		gpxFile.print(lastLng, 6);
-		gpxFile.println("\">");
-		gpxFile.print("  <time>");
-		gpxFile.print(lastUTC);
-		gpxFile.println("</time>");
-		gpxFile.println("</trkpt>");
-		gpxFile.flush();
+	if (gpx_file) {
+		gpx_file.print("<trkpt lat=\"");
+		gpx_file.print(last_lat, 6);
+		gpx_file.print("\" lon=\"");
+		gpx_file.print(last_lng, 6);
+		gpx_file.println("\">");
+		gpx_file.print("  <time>");
+		gpx_file.print(last_utc);
+		gpx_file.println("</time>");
+		gpx_file.println("</trkpt>");
+		gpx_file.flush();
 	}
 
 }
 
-void closeGPX() {
-	if (gpxFile) {
-		gpxFile.println("</trkseg></trk></gpx>");
-		gpxFile.flush();
-		gpxFile.close();
+void close_gpx() 
+{
+	if (gpx_file) {
+		gpx_file.println("</trkseg></trk></gpx>");
+		gpx_file.flush();
+		gpx_file.close();
 	}
 }
 
-void startWiFiServer() {
-	if (wifiStarted) return;
-	wifiStarted = true;
+void start_wifi_server() 
+{
+	if (wifi_started) return;
+	wifi_started = true;
 
-	WiFi.softAP(wifiSSID.c_str(), wifiPass.c_str());
+	WiFi.softAP(wifi_ssid.c_str(), wifi_pass.c_str());
 	IPAddress IP = WiFi.softAPIP();
 	// Serial.print("AP IP address: ");
 	// Serial.println(IP);
@@ -856,8 +866,8 @@ void startWiFiServer() {
 		// Serial.println("LAT: " + WayLat);
 		// Serial.println("LNG: " + WayLng);
 
-		replaceConfigLine("/config.txt", "Latitude", WayLat.c_str());
-		replaceConfigLine("/config.txt", "Longitude", WayLng.c_str());
+		replace_config_line("/config.txt", "Latitude", WayLat.c_str());
+		replace_config_line("/config.txt", "Longitude", WayLng.c_str());
 		// SD.remove("/config.txt");
 		// File f = SD.open("/config.txt", FILE_WRITE);
 
@@ -1000,87 +1010,89 @@ void startWiFiServer() {
 	server.begin();
 
 	display.print("\nSSID:");
-	display.println(wifiSSID);
+	display.println(wifi_ssid);
 	display.print("Password:");
-	display.println(wifiPass);
+	display.println(wifi_pass);
 	display.print("Addr: ");
 	display.println(IP);
 	display.print("\nWIFI Enabled");
 	display.display();
 }
 
-void stopWiFiServer() {
-	if (!wifiStarted) return;
+void stop_wifi_server() 
+{
+	if (!wifi_started) return;
 	WiFi.softAPdisconnect(true);
 	server.end();
-	wifiStarted = false;
+	wifi_started = false;
 }
 
 // === Button Handling ===
-void handleButton() {
+void handle_button() 
+{
 	static unsigned long lastChange = 0;
 	bool pressed = digitalRead(BUTTON_PIN) == LOW;
 
-	if (pressed && !buttonWasPressed && millis() - lastChange > DEBOUNCE_MS) {
-		buttonPressTime = millis();
-		buttonWasPressed = true;
+	if (pressed && !button_was_pressed && millis() - lastChange > debounce_ms) {
+		button_press_time = millis();
+		button_was_pressed = true;
 		lastChange = millis();
 	}
 
-	if (!pressed && buttonWasPressed) {
-		buttonWasPressed = false;
-		unsigned long pressDuration = millis() - buttonPressTime;
+	if (!pressed && button_was_pressed) {
+		button_was_pressed = false;
+		unsigned long pressDuration = millis() - button_press_time;
 
-		if (pressDuration > LONG_PRESS_MS) {
+		if (pressDuration > long_press_ms) {
 			// Long press → toggle sleep
-			sleepEnabled = !sleepEnabled;
-			// Serial.println(sleepEnabled ? "Entering Deep Sleep" : "Waking up");
-			if (sleepEnabled) {
-				displayText("Sleep Mode\nEntering Sleep...\nPress Button to Wake up", 1, true, true);
+			sleep_enabled = !sleep_enabled;
+			// Serial.println(sleep_enabled ? "Entering Deep Sleep" : "Waking up");
+			if (sleep_enabled) {
+				display_text("Sleep Mode\nEntering Sleep...\nPress Button to Wake up", 1, true, true);
 				gpsSerial.end();
-				stopWiFiServer();
+				stop_wifi_server();
 				delay(3000);
-				displayText("", 1, true, true);
+				display_text("", 1, true, true);
 				esp_deep_sleep_start();
 			}
 		} else {
 			// Short press → cycle mode
-			currentMode = (Mode)((currentMode + 1) % 5);
-			switch (currentMode) {
+			current_mode = (Mode)((current_mode + 1) % 5);
+			switch (current_mode) {
 			case INFO_MODE:
-				stopWiFiServer();
+				stop_wifi_server();
 				battery_update();
-				loadConfig();
-				displayInfo();
+				load_config();
+				display_info();
 				// Serial.println("Switch to INFO");
 				break;
 
 			case LIVE_MODE:		
-				stopWiFiServer();
+				stop_wifi_server();
 				battery_update();
 				// Serial.println("Switch to LIVE");
 				first_load = true;
 				break;
 
 			case LOG_MODE:
-				stopWiFiServer();
+				stop_wifi_server();
 				battery_update();
 				// Serial.println("Switch to LOG");
 				first_load = true;
 				break;
 
 			case NAV_MODE:		
-				stopWiFiServer();
+				stop_wifi_server();
 				battery_update();
 				// Serial.println("Switch to NAV");
 				first_load = true;
 				break;
 			
 			case WIFI_MODE:
-				displayText("WIFI MODE", 1, true);
+				display_text("WIFI MODE", 1, true);
 				battery_update();
 				battery_display();
-				startWiFiServer();
+				start_wifi_server();
 				// Serial.println("Switch to WIFI");
 				break;
 			}
@@ -1089,35 +1101,36 @@ void handleButton() {
 	}
 }
 
-void gpsFixTimeTest() {
-	if (FixState == 0) {
-		displayText("Waiting for Fix", 1, true, true); 
-		FixState++;
+void gps_fix_test() 
+{
+	if (fix_state == 0) {
+		display_text("Waiting for fix_", 1, true, true); 
+		fix_state++;
 		return;
-	} else if (FixState == 1) {
+	} else if (fix_state == 1) {
 		uint32_t startmS = millis();
 		uint8_t GPSchar;
 
-		uint32_t endFixmS;
-		uint32_t FixTimeS;
+		uint32_t endfix_mS;
+		uint32_t fix_TimeS;
 
 		while (true) {
 			if (gpsSerial.available() > 0) gps.encode(gpsSerial.read());
 
 		//ensures that GGA and RMC sentences have been received
 			if (gps.speed.isUpdated() && gps.satellites.isUpdated()) {
-				endFixmS = millis();   //record the time when we got a GPS fix
-				FixTimeS = (endFixmS - startmS);
-				displayText("Fix Aquired", 1, true);
-				display.print(FixTimeS);
+				endfix_mS = millis();   //record the time when we got a GPS fix
+				fix_TimeS = (endfix_mS - startmS);
+				display_text("fix_ Aquired", 1, true);
+				display.print(fix_TimeS);
 				display.println(" ms");
 
 				TinyGPSDate date = gps.date;
 				TinyGPSTime time = gps.time;
 
-				String isoTimeLocal = toISO8601Local(date, time, timezoneOffsetHours);
+				String isoTime_local = to_iso8601_local(date, time, timezone_offset_hours);
 				
-				display.println(isoTimeLocal);
+				display.println(isoTime_local);
 				display.print("Lat:  ");
 				display.println(gps.location.lat(), 5);
 				display.print("Lng:  ");
@@ -1125,14 +1138,15 @@ void gpsFixTimeTest() {
 				display.print("Sats: ");
 				display.println(gps.satellites.value());
 				display.display();
-				FixState++;
+				fix_state++;
 				return;
 			}
 		}
 	}
 }
 
-int gpsFixCheck() {
+int gps_fix_check() 
+{
 	if (gpsSerial.available() > 0) {
     gps.encode(gpsSerial.read());
     if (gps.speed.isUpdated() && gps.satellites.isUpdated()) return 1; //ensures that GGA and RMC sentences have been received

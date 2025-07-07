@@ -142,9 +142,11 @@ void setup(void)
 	gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
 	display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
 	display.setTextColor(SSD1306_WHITE);
-	while (!SD.begin(SD_CS))
+	
+  while (!SD.begin(SD_CS))
 		display_text("Error\nSD Error\nCheck if installed and Reset", 1, true, true);
-	load_config();
+	
+  load_config();
 	current_mode = INFO_MODE;
 	battery_update();
 	display_info();
@@ -159,7 +161,10 @@ void loop(void)
 	if (current_mode == WIFI_MODE || current_mode == INFO_MODE)
 		return;
 
-	if (gps_fix_check() == 0) {
+  int gps_check = gps_fix_check();
+
+
+	if (gps_check == 0) {
 		fix_start = millis();
 		switch (current_mode) {
 		case LIVE_MODE:
@@ -174,7 +179,7 @@ void loop(void)
 		}
     update_display = false;
     return;
-	} else if (gps_fix_check() == 3) return;
+	} else if (gps_check == 3) return;
 
 	fix_Time = millis() - fix_start;
 
@@ -504,7 +509,6 @@ String gps_date_stamp(TinyGPSDate date)
 }
 
 // === display tool (maybe reo) ===
-
 void display_text(const String &text, int size, bool clear, bool excute) 
 {
 	if (clear) 
@@ -647,6 +651,7 @@ void display_info()
 	battery_display();
 	display.display();
 }
+
 // === Logging ===
 void open_log_files(const String &dateStr) 
 {

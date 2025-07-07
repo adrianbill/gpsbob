@@ -19,7 +19,6 @@
 #include <TinyGPSPlus.h>
 #include "driver/rtc_io.h"
 
-
 // === PINS ===
 // SDA D4 For reference, definition not needed
 // SCL D5 For reference, definition not needed
@@ -69,7 +68,6 @@ unsigned long last_bat_time = 0;
 int last_fix_time = 0;
 int last_sats = 0;
 double last_hdop = 0.0;
-
 
 // === Wi-Fi ===
 AsyncWebServer server(80);
@@ -155,7 +153,6 @@ void setup(void)
 // === Main Loop ===
 void loop(void)
 {
-
 	handle_button();
 
 	if (current_mode == WIFI_MODE || current_mode == INFO_MODE)
@@ -492,9 +489,7 @@ String to_iso8601_local(TinyGPSDate date, TinyGPSTime time, int offsetHours)
 			break;
 		}
 		new_day = days + new_day;
-
 	}
-
 	char buf[25];
 	snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d",
 			 new_year, new_month, new_day, new_hour, minute, second);
@@ -524,10 +519,10 @@ void display_text(const String &text, int size, bool clear, bool excute)
 
 void update_gps_data(void)
 {
-  TinyGPSDate date = gps.date;
-	TinyGPSTime time = gps.time;
-  today = gps_date_stamp(date);
-  last_utc = to_iso8601(date, time);
+    TinyGPSDate date = gps.date;
+    TinyGPSTime time = gps.time;
+    today = gps_date_stamp(date);
+    last_utc = to_iso8601(date, time);
 	last_timestamp = to_iso8601_local(date, time, timezone_offset_hours);
 	last_lat = gps.location.lat();
 	last_lng = gps.location.lng();
@@ -655,7 +650,6 @@ void display_info()
 // === Logging ===
 void open_log_files(const String &dateStr) 
 {
-
 	current_date_str = dateStr;
 
 	String csvName = "/log_" + current_date_str + ".csv";
@@ -863,7 +857,7 @@ void start_wifi_server()
 	});
 
 // Config: POST
-	server.on("/waypoint", HTTP_POST, [](AsyncWebServerRequest *request){
+	server.on("/waypoint", HTTP_POST, [](AsyncWebServerRequest *request) {
 		String WayLat  = request->getParam("WayLat", true)->value();
 		String WayLng  = request->getParam("WayLng", true)->value();
 
@@ -883,8 +877,6 @@ void start_wifi_server()
 		// f.printf("Latitude=%s\n", WayLat.c_str());
 		// f.printf("Longitude=%s\n", WayLng.c_str());
 		// f.close();
-
-
 
 		request->redirect("/waypoint");
 	});
@@ -967,7 +959,7 @@ void start_wifi_server()
 	});
 
 // Config: POST
-	server.on("/settings", HTTP_POST, [](AsyncWebServerRequest *request){
+	server.on("/settings", HTTP_POST, [](AsyncWebServerRequest *request) {
 		String ssid    = request->getParam("ssid", true)->value();
 		String pass    = request->getParam("password", true)->value();
 		String tz      = request->getParam("tz", true)->value();
@@ -1008,7 +1000,7 @@ void start_wifi_server()
 	server.serveStatic("/", SD, "/");
 
 	// 404 handler
-	server.onNotFound([](AsyncWebServerRequest *request){
+	server.onNotFound([](AsyncWebServerRequest *request) {
 		request->send(404, "text/plain", "Not found");
 	});
 

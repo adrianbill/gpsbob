@@ -158,7 +158,7 @@ void loop(void)
 	if (current_mode == WIFI_MODE || current_mode == INFO_MODE)
 		return;
 
-  int gps_check = gps_fix_check();
+    int gps_check = gps_fix_check();
 
 
 	if (gps_check == 0) {
@@ -174,8 +174,9 @@ void loop(void)
 			display_nav_data("NAV Mode - Last");
 			break;
 		}
-    update_display = false;
-    return;
+        update_display = false;
+        first_load = true;
+        return;
 	} else if (gps_check == 3) return;
 
 	fix_Time = millis() - fix_start;
@@ -189,7 +190,7 @@ void loop(void)
 	switch (current_mode) {
 	case LIVE_MODE:
 		if ((millis() - last_live_time >= live_interval) || first_load) {
-      update_display = true;
+            update_display = true;
 			update_gps_data();
 			display_gps_data("Live Mode " + String(live_interval / 1000) + " s ");
 			last_live_time = millis();
@@ -199,7 +200,7 @@ void loop(void)
 
 	case LOG_MODE:
 		if ((millis() - last_log_time >= log_interval) || first_load) {
-      update_display = true;
+            update_display = true;
 			update_gps_data();
 			display_gps_data("Log Mode " + String(log_interval / 1000) + " s ");
 			log_data();
@@ -210,12 +211,17 @@ void loop(void)
 
 	case NAV_MODE:
 		if ((millis() - last_live_time >= 1000) || first_load) {
-      update_display = true;
+            update_display = true;
 			update_gps_data();
 			display_nav_data("NAV Mode");
 			last_live_time = millis();
-			first_load = false;
+			// first_load = false;
 		}
+		if (millis() - last_log_time >= log_interval || first_load) {
+            log_data();
+			last_log_time = millis();   
+		}
+        first_load = false;
 		break;
 	}
 }

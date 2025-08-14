@@ -78,13 +78,15 @@ String wifi_pass = "12345678"; /* Default password */
 bool wifi_started = false;
 
 // === Sleep & Modes ===
+
 RTC_DATA_ATTR int boot_count = 0;
 enum Mode {
-  INFO_MODE,
-  LIVE_MODE,
-  LOG_MODE,
-  NAV_MODE,
-  WIFI_MODE
+    INFO_MODE,
+    LIVE_MODE,
+    LOG_MODE,
+    NAV_MODE_A,
+    NAV_MODE_B,
+    WIFI_MODE
 };
 uint32_t button_press_time = 0;
 const uint16_t long_press_ms = 3000; /* Long press length, 3 seconds */
@@ -92,45 +94,53 @@ const uint16_t debounce_ms = 50;
 bool sleep_enabled = false;
 bool button_was_pressed = false;
 Mode current_mode = INFO_MODE; /* Default Start_Mode */
+Mode last_mode = WIFI_MODE;
 bool update_display = true;
 bool first_load = true;
 int bat_ind = 0;
 
-// === Battery ===
+// ___ FUNCTION DECLARATIONS ________________________________________________________________
+
+// === Battery Utilities ===
 float battery_voltage(void);
 int battery_percentage(float v);
 void battery_update(void);
 void battery_display(void);
 
-// === Config File ===
-void load_config(void);
+// === Config Management ===
+void load_config(void); 
 bool replace_config_line(const char *filename, const String &key, const String &newValue);
 
 // === Date & Time conversion ===
-String to_iso8601(TinyGPSDate date, TinyGPSTime time);
-String to_iso8601_local(TinyGPSDate date, TinyGPSTime time, int offsetHours);
-String gps_date_stamp(TinyGPSDate date);
+String to_iso8601(TinyGPSDate date, TinyGPSTime time); 
+String to_iso8601_local(TinyGPSDate date, TinyGPSTime time, int offsetHours); 
+String gps_date_stamp(TinyGPSDate date); 
 
-// === display tool (maybe reo) ===
+// === display tool (maybe redo); ===
 void display_text(const String &text, int size, bool clear = false, bool excute = false);
 void display_gps_data(const String &title);
 void display_nav_data(const String &title);
 void display_info(void);
 
-// === GPS Checking ===
+// === Log File Handling===
+const char* mode_to_string(Mode mode);
+void open_log_files(const String &dateStr, const String &mode_name); 
+void log_data(void); 
+void close_gpx(void); 
+
+// === Webserver===
+void start_wifi_server(void); 
+void stop_wifi_server(void);
+
+// === Button Handling ===
+void handle_button(void); 
+
+// === GPS Utilities===
 void update_gps_data(void);
 void gps_fix_test(void); /* for testing only, not used in final product */
 int gps_fix_check(void);
 
-// === Logging ===
-void open_log_files(const String &dateStr);
-void log_data(void);
-void close_gpx(void);
-void start_wifi_server(void);
-void stop_wifi_server(void);
-
-// === Button Handling ===
-void handle_button(void);
+// ___ SETUP & LOOP ________________________________________________________________
 
 // === Setup ===
 void setup(void)
@@ -143,9 +153,7 @@ void setup(void)
 
 	// display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
     display.begin(SCREEN_ADDRESS, true);
-	display.setTextColor(SH110X_WHITE);
-
-
+	display.setTextColor(WHITE);
 	
   while (!SD.begin(SD_CS))
 		display_text("Error\nSD Error\nCheck if installed and Reset", 1, true, true);
@@ -176,7 +184,10 @@ void loop(void)
 		case LOG_MODE:
 			display_gps_data("Log Mode - Last");
 			break;
-		case NAV_MODE:
+		case NAV_MODE_A:
+			display_nav_data("NAV Mode - Last");
+			break;
+        case NAV_MODE_B:
 			display_nav_data("NAV Mode - Last");
 			break;
 		}
@@ -198,7 +209,7 @@ void loop(void)
 		if ((millis() - last_live_time >= live_interval) || first_load) {
             update_display = true;
 			update_gps_data();
-			display_gps_data("Live Mode " + String(live_interval / 1000) + " s ");
+			display_gps_data("LIVE Freq:" + String(live_interval / 1000) + " s ");
 			last_live_time = millis();
 			first_load = false;
 		}
@@ -208,18 +219,33 @@ void loop(void)
 		if ((millis() - last_log_time >= log_interval) || first_load) {
             update_display = true;
 			update_gps_data();
-			display_gps_data("Log Mode " + String(log_interval / 1000) + " s ");
+			display_gps_data("LOG Freq: " + String(log_interval / 1000) + " s ");
 			log_data();
 			last_log_time = millis();
 			first_load = false;
 		}
 		break;
 
-	case NAV_MODE:
+	case NAV_MODE_A:
 		if ((millis() - last_live_time >= 1000) || first_load) {
             update_display = true;
 			update_gps_data();
-			display_nav_data("NAV Mode");
+			display_nav_data("NAV A");
+			last_live_time = millis();
+			// first_load = false;
+		}
+		if (millis() - last_log_time >= log_interval || first_load) {
+            log_data();
+			last_log_time = millis();   
+		}
+        first_load = false;
+		break;
+        
+    case NAV_MODE_B:
+		if ((millis() - last_live_time >= 1000) || first_load) {
+            update_display = true;
+			update_gps_data();
+			display_nav_data("NAV B");
 			last_live_time = millis();
 			// first_load = false;
 		}
@@ -232,8 +258,9 @@ void loop(void)
 	}
 }
 
-// ======================= FUNCTIONS ==============
-// === Utilities ===
+// ___ FUNCTIONS ________________________________________________________________
+
+// === Battery Utilities ===
 float battery_voltage(void)
 {
 	uint32_t Vbatt = 0;
@@ -314,6 +341,7 @@ void battery_display(void)
 		display.drawLine(cell_xstart, 0, cell_xstart + cell_width, cell_height - 1, WHITE);
 }
 
+// === Config Management ===
 void load_config(void) 
 {
 	if (!SD.exists("/config.txt")) {
@@ -515,7 +543,7 @@ String gps_date_stamp(TinyGPSDate date)
 	return String(buf);
 }
 
-// === display tool (maybe reo) ===
+// === display tool (maybe redo) ===
 void display_text(const String &text, int size, bool clear, bool excute) 
 {
 	if (clear) 
@@ -529,18 +557,7 @@ void display_text(const String &text, int size, bool clear, bool excute)
 	if (excute) display.display();
 }
 
-void update_gps_data(void)
-{
-    TinyGPSDate date = gps.date;
-    TinyGPSTime time = gps.time;
-    today = gps_date_stamp(date);
-    last_utc = to_iso8601(date, time);
-	last_timestamp = to_iso8601_local(date, time, timezone_offset_hours);
-	last_lat = gps.location.lat();
-	last_lng = gps.location.lng();
-	last_sats = gps.satellites.value();
-	last_hdop = gps.hdop.hdop();
-}
+
 
 void display_gps_data(const String &title)
 {
@@ -549,7 +566,7 @@ void display_gps_data(const String &title)
     display.clearDisplay();
     display.setCursor(0, 0);
     display.setTextSize(1);
-    display.setTextColor(SH110X_WHITE);
+    display.setTextColor(WHITE);
     battery_display();
     display.println(title);
     display.println(last_timestamp);
@@ -581,7 +598,7 @@ void display_nav_data(const String &title)
     display.clearDisplay();
     display.setCursor(0, 0);
     display.setTextSize(1);
-    display.setTextColor(SH110X_WHITE);
+    display.setTextColor(WHITE);
     battery_display();
     display.println(title);
     display.println(last_timestamp);
@@ -631,7 +648,7 @@ void display_nav_data(const String &title)
     update_display = false;
 }
 
-void display_info() 
+void display_info(void) 
 {
 	display_text("Info Mode      ", 1, true);
 	display.print("Bat: ");
@@ -660,12 +677,25 @@ void display_info()
 	display.display();
 }
 
-// === Logging ===
-void open_log_files(const String &dateStr) 
+// === Log File Handling===
+const char* mode_to_string(Mode mode)
+{
+    switch (mode) {
+        case INFO_MODE:   return "INFO_MODE";
+        case LIVE_MODE:   return "LIVE_MODE";
+        case LOG_MODE:    return "LOG_MODE";
+        case NAV_MODE_A:  return "NAV_MODE_A";
+        case NAV_MODE_B:  return "NAV_MODE_B";
+        case WIFI_MODE:   return "WIFI_MODE";
+        default:          return "UNKNOWN_MODE";
+    }
+}
+
+void open_log_files(const String &dateStr, const String &mode_name) 
 {
 	current_date_str = dateStr;
 
-	String csvName = "/log_" + current_date_str + ".csv";
+	String csvName = "/log_" + mode_name + dateStr + ".csv";
 	bool newFile_csv = !SD.exists(csvName);
 	csv_file = SD.open(csvName, FILE_APPEND);
 	csv_header_written = newFile_csv;
@@ -675,7 +705,7 @@ void open_log_files(const String &dateStr)
 		csv_file.flush();
 	}
 
-	String gpxName = "/track_" + current_date_str + ".gpx";
+	String gpxName = "/track_" + mode_name + dateStr + ".gpx";
 	bool newFile_gpx = !SD.exists(gpxName);
 	gpx_file = SD.open(gpxName, FILE_APPEND);
 	gpx_header_written = newFile_gpx;
@@ -694,9 +724,18 @@ void open_log_files(const String &dateStr)
 
 void log_data() 
 {
-	if (today != current_date_str) {
+// 	String csvName = "/log_" + mode_name + dateStr + ".csv";
+//     String gpxName = "/track_" + mode_name + dateStr + ".gpx";
+    
+    // if (today != current_date_str) {
+	// 	close_gpx();
+	// 	open_log_files(today, mode_to_string(current_mode));
+	// }
+
+    if ((current_mode != last_mode) || (today != current_date_str)) {
 		close_gpx();
-		open_log_files(today);
+		open_log_files(today, mode_to_string(current_mode));
+        current_mode = last_mode;   
 	}
 
 	String csv =  last_timestamp + "," +
@@ -726,7 +765,7 @@ void log_data()
 
 }
 
-void close_gpx() 
+void close_gpx(void) 
 {
 	if (gpx_file) {
 		gpx_file.println("</trkseg></trk></gpx>");
@@ -735,7 +774,8 @@ void close_gpx()
 	}
 }
 
-void start_wifi_server() 
+// === Webserver===
+void start_wifi_server(void) 
 {
 	if (wifi_started) return;
 	wifi_started = true;
@@ -1029,7 +1069,7 @@ void start_wifi_server()
 	display.display();
 }
 
-void stop_wifi_server() 
+void stop_wifi_server(void) 
 {
 	if (!wifi_started) return;
 	WiFi.softAPdisconnect(true);
@@ -1038,7 +1078,7 @@ void stop_wifi_server()
 }
 
 // === Button Handling ===
-void handle_button() 
+void handle_button(void) 
 {
 	static unsigned long lastChange = 0;
 	bool pressed = digitalRead(BUTTON_PIN) == LOW;
@@ -1067,6 +1107,7 @@ void handle_button()
 			}
 		} else {
 			// Short press → cycle mode
+            last_mode = current_mode;
 			current_mode = (Mode)((current_mode + 1) % 5);
 			switch (current_mode) {
 			case INFO_MODE:
@@ -1091,10 +1132,17 @@ void handle_button()
 				first_load = true;
 				break;
 
-			case NAV_MODE:		
+			case NAV_MODE_A:		
 				stop_wifi_server();
 				battery_update();
-				// Serial.println("Switch to NAV");
+				// Serial.println("Switch to NAV A");
+				first_load = true;
+				break;
+
+            case NAV_MODE_B:		
+				stop_wifi_server();
+				battery_update();
+				// Serial.println("Switch to NAV B");
 				first_load = true;
 				break;
 			
@@ -1111,7 +1159,21 @@ void handle_button()
 	}
 }
 
-void gps_fix_test() 
+// === GPS Utilities===
+void update_gps_data(void)
+{
+    TinyGPSDate date = gps.date;
+    TinyGPSTime time = gps.time;
+    today = gps_date_stamp(date);
+    last_utc = to_iso8601(date, time);
+	last_timestamp = to_iso8601_local(date, time, timezone_offset_hours);
+	last_lat = gps.location.lat();
+	last_lng = gps.location.lng();
+	last_sats = gps.satellites.value();
+	last_hdop = gps.hdop.hdop();
+}
+
+void gps_fix_test(void) 
 {
 	if (fix_state == 0) {
 		display_text("Waiting for fix_", 1, true, true); 
@@ -1155,7 +1217,7 @@ void gps_fix_test()
 	}
 }
 
-int gps_fix_check() 
+int gps_fix_check(void) 
 {
 	if (gpsSerial.available() > 0) {
     gps.encode(gpsSerial.read());

@@ -50,8 +50,10 @@ HardwareSerial gpsSerial(0);
 TinyGPSPlus gps;
 
 // ====== GPS INFO =====
-double waypoint_lat = 0.0;
-double waypoint_lng = 0.0;
+double waypoint_A_lat = 0.0;
+double waypoint_A_lng = 0.0;
+double waypoint_B_lat = 0.0;
+double waypoint_B_lng = 0.0;
 int fix_state = 0;
 int fix_start = 0;
 int fix_Time = 0;
@@ -398,19 +400,33 @@ void load_config(void)
 			// Serial.print(live_interval / 1000);
 			// Serial.println(" seconds");
 		}
-		else if (line.startsWith("Latitude=")) {
+		else if (line.startsWith("Latitude_A=")) {
 			String val = line.substring(9);
 			double wayLat = val.toDouble() ;
-			if (wayLat != 0) waypoint_lat = wayLat;
+			if (wayLat != 0) waypoint_A_lat = wayLat;
 			// Serial.print("Loaded Waypoint Latitude: ");
-			// Serial.println(waypoint_lat,6);
+			// Serial.println(waypoint_A_lat,6);
 		}
-		else if (line.startsWith("Longitude=")) {
+		else if (line.startsWith("Longitude_A=")) {
 			String val = line.substring(10);
 			double wayLng = val.toDouble() ;
-			if (wayLng != 0) waypoint_lng = wayLng;
+			if (wayLng != 0) waypoint_A_lng = wayLng;
 			// Serial.print("Loaded Waypoint Longitude: ");
-			// Serial.println(waypoint_lng,6);
+			// Serial.println(waypoint_A_lng,6);
+		}
+        else if (line.startsWith("Latitude_B=")) {
+			String val = line.substring(9);
+			double wayLat = val.toDouble() ;
+			if (wayLat != 0) waypoint_B_lat = wayLat;
+			// Serial.print("Loaded Waypoint Latitude: ");
+			// Serial.println(waypoint_A_lat,6);
+		}
+		else if (line.startsWith("Longitude_B=")) {
+			String val = line.substring(10);
+			double wayLng = val.toDouble() ;
+			if (wayLng != 0) waypoint_B_lng = wayLng;
+			// Serial.print("Loaded Waypoint Longitude: ");
+			// Serial.println(waypoint_A_lng,6);
 		}
 	}
 	config.close();
@@ -591,8 +607,21 @@ void display_nav_data(const String &title)
 {
     if (update_display == false)
         return;
-    double distance = TinyGPSPlus::distanceBetween(last_lat, last_lng, waypoint_lat, waypoint_lng);
-    double course_to_waypoint = TinyGPSPlus::courseTo(last_lat, last_lng, waypoint_lat, waypoint_lng);
+    
+    double way_lat = 0.0;
+    double way_lng = 0.0;    
+
+    if (current_mode == NAV_MODE_A) {
+        way_lat = waypoint_A_lat;
+        way_lng = waypoint_A_lng;
+    } else if (current_mode == NAV_MODE_B) {
+        way_lat = waypoint_B_lat;
+        way_lng = waypoint_B_lng;
+    }
+
+    
+    double distance = TinyGPSPlus::distanceBetween(last_lat, last_lng,  way_lat,  way_lng);
+    double course_to_waypoint = TinyGPSPlus::courseTo(last_lat, last_lng,  way_lat,  way_lng);
     const char *cardinal = TinyGPSPlus::cardinal(course_to_waypoint);
     
     display.clearDisplay();
@@ -609,7 +638,7 @@ void display_nav_data(const String &title)
         sprintf(buffer, " %6.1f km", distance / 1000.0);
     else {
         sprintf(buffer, ">10,000 km");
-        display.printf("%8.4f, %8.4f", waypoint_lat, waypoint_lng);
+        display.printf("%8.4f, %8.4f",  way_lat,  way_lng);
         display.println("");
         display.setCursor((display.width() - (10 * 12)) / 2, display.getCursorY() + 4);
         display.setTextSize(2);
@@ -619,7 +648,7 @@ void display_nav_data(const String &title)
         display.display();
         return;
     }
-    display.printf("%8.4f, %8.4f", waypoint_lat, waypoint_lng);
+    display.printf("%8.4f, %8.4f",  way_lat,  way_lng);
     display.println("");
     display.setCursor(0, display.getCursorY() + 4);
     display.setTextSize(2);
@@ -668,10 +697,10 @@ void display_info(void)
 
 	char buffer [20];
 
-	display.println("Waypoint");
-	sprintf(buffer, " Lat: %11.6f", waypoint_lat);
+	display.println("Waypoint A (B not shown)");
+	sprintf(buffer, " Lat: %11.6f", waypoint_A_lat);
 	display.println(buffer);
-	sprintf(buffer, " Lon: %11.6f", waypoint_lng);
+	sprintf(buffer, " Lon: %11.6f", waypoint_A_lng);
 	display.print(buffer);
 	battery_display();
 	display.display();
@@ -852,11 +881,13 @@ void start_wifi_server(void)
 			return;
 		}
 
-		String WayLat = "0", WayLng = "0";
+		String WayLatA = "0", WayLngA = "0", WayLatB = "0", WayLngB = "0";
 		while (f.available()) {
 			String line = f.readStringUntil('\n');
-			if (line.startsWith("Latitude=")) WayLat = line.substring(9);
-			if (line.startsWith("Longitude=")) WayLng = line.substring(10);
+			if (line.startsWith("Latitude_A=")) WayLatA = line.substring(11);
+			if (line.startsWith("Longitude_A=")) WayLngA = line.substring(12);
+            if (line.startsWith("Latitude_B=")) WayLatB = line.substring(11);
+			if (line.startsWith("Longitude_B=")) WayLngB = line.substring(12);
 		}
 		f.close();
 
@@ -896,12 +927,16 @@ void start_wifi_server(void)
 				</style>
 			</head>
 			<body>
-				<h2>Waypoint</h2>
+				<h2>Waypoints</h2>
 				<form method='POST' action='/waypoint'>
 		)rawliteral";
-			html += "Latitude: <input name='WayLat' value='" + WayLat + "'><br>";
-			html += "Longitude: <input name='WayLng' value='" + WayLng + "'><br>";
-			html += "<input type='submit' class='button' value='Save'>";
+            html += "<h4>Waypoint A</h4>";
+			html += "Latitude: <input name='WayLatA' value='" + WayLatA + "'><br>";
+			html += "Longitude: <input name='WayLngA' value='" + WayLngA + "'><br>";
+            html += "<h4>Waypoint B</h4>";
+			html += "Latitude: <input name='WayLatB' value='" + WayLatB + "'><br>";
+			html += "Longitude: <input name='WayLngB' value='" + WayLngB + "'><br>";
+            html += "<input type='submit' class='button' value='Save'>";
 			html += "</form>";
 			html += "<a class='button' href='/'>Main Menu</a>";
 			html += "</body></html>";
@@ -911,15 +946,18 @@ void start_wifi_server(void)
 
 // Config: POST
 	server.on("/waypoint", HTTP_POST, [](AsyncWebServerRequest *request) {
-		String WayLat  = request->getParam("WayLat", true)->value();
-		String WayLng  = request->getParam("WayLng", true)->value();
-
+		String WayLatA  = request->getParam("WayLatA", true)->value();
+		String WayLngA  = request->getParam("WayLngA", true)->value();
+		String WayLatB  = request->getParam("WayLatB", true)->value();
+		String WayLngB  = request->getParam("WayLngB", true)->value();
 		// Serial.println("Writing new waypoint:");
 		// Serial.println("LAT: " + WayLat);
 		// Serial.println("LNG: " + WayLng);
 
-		replace_config_line("/config.txt", "Latitude", WayLat.c_str());
-		replace_config_line("/config.txt", "Longitude", WayLng.c_str());
+		replace_config_line("/config.txt", "Latitude_A", WayLatA.c_str());
+		replace_config_line("/config.txt", "Longitude_A", WayLngA.c_str());
+        replace_config_line("/config.txt", "Latitude_B", WayLatB.c_str());
+		replace_config_line("/config.txt", "Longitude_B", WayLngB.c_str());
 		// SD.remove("/config.txt");
 		// File f = SD.open("/config.txt", FILE_WRITE);
 
@@ -942,7 +980,7 @@ void start_wifi_server(void)
 			return;
 		}
 
-		String ssid = "", pass = "", tz = "0", log = "0", live = "0", WayLat = "0", WayLng = "0";
+		String ssid = "", pass = "", tz = "0", log = "0", live = "0";
 		while (f.available()) {
 			String line = f.readStringUntil('\n');
 			if (line.startsWith("ssid=")) ssid = line.substring(5);
@@ -950,8 +988,6 @@ void start_wifi_server(void)
 			if (line.startsWith("timezone=")) tz = line.substring(9);
 			if (line.startsWith("log_interval=")) log = line.substring(13);
 			if (line.startsWith("live_interval=")) live = line.substring(14);
-			if (line.startsWith("Latitude=")) WayLat = line.substring(9);
-			if (line.startsWith("Longitude=")) WayLng = line.substring(10);
 		}
 		f.close();
 
@@ -1000,9 +1036,6 @@ void start_wifi_server(void)
 			html += "Timezone Offset: <input name='tz' value='" + tz + "'><br>";
 			html += "Log Interval (seconds): <input name='log' value='" + log + "'><br>";
 			html += "Live Update (seconds): <input name='live' value='" + live + "'><br>";
-			html += "<h4>Waypoint</h4>";
-			html += "Latitude: <input name='WayLat' value='" + WayLat + "'><br>";
-			html += "Longitude: <input name='WayLng' value='" + WayLng + "'><br>";
 			html += "<input type='submit' class='button' value='Save'>";
 			html += "</form>";
 			html += "<a class='button' href='/'>Main Menu</a>";
@@ -1018,8 +1051,6 @@ void start_wifi_server(void)
 		String tz      = request->getParam("tz", true)->value();
 		String log     = request->getParam("log", true)->value();
 		String live    = request->getParam("live", true)->value();
-		String WayLat  = request->getParam("WayLat", true)->value();
-		String WayLng  = request->getParam("WayLng", true)->value();
 
 		// Serial.println("Writing new config:");
 		// Serial.println("SSID: " + ssid);
@@ -1030,21 +1061,11 @@ void start_wifi_server(void)
 		// Serial.println("LAT: " + WayLat);
 		// Serial.println("LNG: " + WayLng);
 
-		SD.remove("/config.txt");
-		File f = SD.open("/config.txt", FILE_WRITE);
-		if (!f) {
-			request->send(500, "text/plain", "Failed to save settings");
-			return;
-		}
-
-		f.printf("ssid=%s\n", ssid.c_str());
-		f.printf("password=%s\n", pass.c_str());
-		f.printf("timezone=%s\n", tz.c_str());
-		f.printf("log_interval=%s\n", log.c_str());
-		f.printf("live_interval=%s\n", live.c_str());
-		f.printf("Latitude=%s\n", WayLat.c_str());
-		f.printf("Longitude=%s\n", WayLng.c_str());
-		f.close();
+        replace_config_line("/config.txt", "ssid",  ssid.c_str());
+		replace_config_line("/config.txt", "password", pass.c_str());
+        replace_config_line("/config.txt", "timezone", tz.c_str());
+        replace_config_line("/config.txt", "log_interval", log.c_str());
+		replace_config_line("/config.txt", "live_interval", live.c_str());
 
 		request->redirect("/settings");
 	});

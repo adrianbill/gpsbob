@@ -18,11 +18,12 @@
 #include <Adafruit_SSD1306.h>
 #include <TinyGPSPlus.h>
 #include "driver/rtc_io.h"
+#include <Adafruit_SH110X.h>
 
 // === PINS ===
 // SDA D4 For reference, definition not needed
 // SCL D5 For reference, definition not needed
-#define SD_CS D2 /* SD Card Chip Select */
+#define SD_CS D3 /* SD Card Chip Select */
 #define GPS_RX D7
 #define GPS_TX D6
 #define BUTTON_PIN GPIO_NUM_2
@@ -32,7 +33,8 @@
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define SCREEN_ADDRESS 0x3C
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+// Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 // === Logging SD Card ===
 fs::File csv_file;
@@ -138,8 +140,12 @@ void setup(void)
 	esp_sleep_enable_ext0_wakeup(BUTTON_PIN, 0); /* 1 = High, 0 = Low */
 	pinMode(BUTTON_PIN, INPUT_PULLUP);
 	gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
-	display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
-	display.setTextColor(SSD1306_WHITE);
+
+	// display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
+    display.begin(SCREEN_ADDRESS, true);
+	display.setTextColor(SH110X_WHITE);
+
+
 	
   while (!SD.begin(SD_CS))
 		display_text("Error\nSD Error\nCheck if installed and Reset", 1, true, true);
@@ -543,7 +549,7 @@ void display_gps_data(const String &title)
     display.clearDisplay();
     display.setCursor(0, 0);
     display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
+    display.setTextColor(SH110X_WHITE);
     battery_display();
     display.println(title);
     display.println(last_timestamp);
@@ -571,10 +577,11 @@ void display_nav_data(const String &title)
     double distance = TinyGPSPlus::distanceBetween(last_lat, last_lng, waypoint_lat, waypoint_lng);
     double course_to_waypoint = TinyGPSPlus::courseTo(last_lat, last_lng, waypoint_lat, waypoint_lng);
     const char *cardinal = TinyGPSPlus::cardinal(course_to_waypoint);
+    
     display.clearDisplay();
     display.setCursor(0, 0);
     display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
+    display.setTextColor(SH110X_WHITE);
     battery_display();
     display.println(title);
     display.println(last_timestamp);
@@ -605,7 +612,7 @@ void display_nav_data(const String &title)
     int x = display.getCursorX();
     int y = display.getCursorY();
     display.setCursor(x, y + 4);
-    sprintf(buffer, " %6.1f", course_to_waypoint);
+    sprintf(buffer, " %5.0f", course_to_waypoint);
     display.println("");
     display.setTextSize(2);
     display.print(buffer);
